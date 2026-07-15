@@ -6,8 +6,6 @@ import duckdb
 import logging
 import time
 
-# ------------------------------------------------------------
-# Initialize logger & Audit Log
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -17,12 +15,8 @@ audit_handler = logging.FileHandler("audit.log")
 audit_handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
 audit_logger.addHandler(audit_handler)
 
-# ------------------------------------------------------------
-# Persistent in-memory DuckDB connection
 duck_conn = duckdb.connect(database=":memory:")
 
-# ------------------------------------------------------------
-# Pydantic models for request payload
 class Node(BaseModel):
     id: str
     sql: str = Field(..., description="SQL snippet for this node.")
@@ -42,8 +36,6 @@ class AIGenerateRequest(BaseModel):
     nodes: List[Node]
     edges: List[Edge]
 
-# ------------------------------------------------------------
-# Helper: topological sort based on edges
 def topological_sort(nodes: List[Node], edges: List[Edge]) -> List[Node]:
     node_map: Dict[str, Node] = {node.id: node for node in nodes}
     graph: Dict[str, List[str]] = {node.id: [] for node in nodes}
@@ -70,11 +62,8 @@ def topological_sort(nodes: List[Node], edges: List[Edge]) -> List[Node]:
         raise HTTPException(status_code=400, detail="Cyclic dependency detected among nodes")
     return ordered
 
-# ------------------------------------------------------------
-# FastAPI app definition
 app = FastAPI(title="ETL Execution Engine", version="0.1.0")
 
-# Enable CORS for the React frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "https://localhost:5173"],
@@ -94,15 +83,21 @@ async def execute_etl(request: ExecuteRequest) -> Dict[str, Any]:
     for node in ordered_nodes:
         sql = node.sql.strip()
         
-        # 0. Intercept Excel Parsing
-        if sql.startswith("__EXCEL__"):
+        if sql.startswith("__EXCEL__") or sql.startswith("__EXCEL_MULTI__"):
             import pandas as pd
             import glob
-            file_path = sql.split("'")[1]
+            import json
+            
             try:
-                all_files = glob.glob(file_path)
+                if sql.startswith("__EXCEL_MULTI__"):
+                    files_json = sql.replace("__EXCEL_MULTI__", "").strip()
+                    all_files = json.loads(files_json)
+                else:
+                    file_path = sql.split("'")[1]
+                    all_files = glob.glob(file_path)
+                
                 if not all_files:
-                    raise Exception(f"No files found matching {file_path}")
+                    raise Exception(f"No files found for node {node.id}")
                 
                 df_list = [pd.read_excel(f) for f in all_files]
                 df = pd.concat(df_list, ignore_index=True)
@@ -120,7 +115,6 @@ async def execute_etl(request: ExecuteRequest) -> Dict[str, Any]:
                 logger.exception(error_msg)
                 raise HTTPException(status_code=500, detail=error_msg)
 
-        # 1. Strict Security Sanitization
         sql_upper = sql.upper()
         allowed_starts = ("SELECT", "WITH", "PIVOT", "UNPIVOT", "SUMMARIZE")
         if not any(sql_upper.startswith(p) for p in allowed_starts):
@@ -141,14 +135,12 @@ async def execute_etl(request: ExecuteRequest) -> Dict[str, Any]:
             duck_conn.execute(create_stmt)
             duration_ms = int((time.time() - start_time) * 1000)
             
-            # Fetch row count for audit
             row_count_res = duck_conn.execute(f"SELECT COUNT(*) FROM {view_name(node.id)}").fetchone()
             rows_processed = row_count_res[0] if row_count_res else 0
             
             node_statuses[node.id] = {"status": "SUCCESS", "duration_ms": duration_ms}
             logs.append(f"[SUCCESS] Created view {view_name(node.id)} in {duration_ms}ms ({rows_processed} rows)")
             
-            # 2. Audit Logging
             audit_logger.info(f"NODE_EXEC: {node.id} | DURATION: {duration_ms}ms | ROWS: {rows_processed} | SQL: {sql}")
             logger.info("Created view %s", view_name(node.id))
         except Exception as e:
@@ -170,7 +162,6 @@ async def execute_etl(request: ExecuteRequest) -> Dict[str, Any]:
     final_sql = f"SELECT * FROM {view_name(final_node.id)}"
     
     try:
-        # Fetch metadata
         col_info = duck_conn.execute(f"DESCRIBE {view_name(final_node.id)}").fetchall()
         columns = [{"name": row[0], "type": row[1]} for row in col_info]
         column_count = len(columns)
@@ -178,10 +169,8 @@ async def execute_etl(request: ExecuteRequest) -> Dict[str, Any]:
         row_count_res = duck_conn.execute(f"SELECT COUNT(*) FROM {view_name(final_node.id)}").fetchone()
         row_count = row_count_res[0] if row_count_res else 0
 
-        # Fetch sample
         result = duck_conn.execute(final_sql).fetchall()
         
-        # Format sample results into dicts for clean JSON
         col_names = [c["name"] for c in columns]
         sample_data = [dict(zip(col_names, row)) for row in result[:100]]
 
@@ -207,7 +196,6 @@ async def ai_generate_sql(request: AIGenerateRequest) -> Dict[str, str]:
     if not request.api_key:
         raise HTTPException(status_code=401, detail="API Key is missing")
     
-    # 1. Find the parent node of the target AI node
     parent_edges = [e for e in request.edges if e.target == request.target_node_id]
     if not parent_edges:
         raise HTTPException(status_code=400, detail="AI Node must be connected to a parent node.")
@@ -215,24 +203,16 @@ async def ai_generate_sql(request: AIGenerateRequest) -> Dict[str, str]:
     parent_node_id = parent_edges[0].source
     parent_view = f"node_{parent_node_id.replace('-', '_')}"
     
-    # 2. Execute the pipeline up to the parent node to ensure the view exists
-    # We strip out the AI node and its descendants from the topological sort temporarily.
     try:
-        # Re-using the logic from execute_etl (ideally refactored, but acceptable for MVP)
-        # Assuming the frontend sent the latest DAG, and we just need the schema of the parent.
-        # If the parent view doesn't exist, we'll try to describe it and fail. 
-        # For a robust MVP, we'll execute the parent node's SQL directly if it exists, or assume the pipeline was already run.
         col_info = duck_conn.execute(f"DESCRIBE {parent_view}").fetchall()
         columns = [{"name": row[0], "type": row[1]} for row in col_info]
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Please run the pipeline once so the AI can read the parent node's data schema. Error: {e}")
 
-    # 3. Construct LLM Prompt
     schema_str = ", ".join([f"{c['name']} ({c['type']})" for c in columns])
     system_instruction = "You are an expert DuckDB SQL engineer. Output ONLY valid SQL. No markdown, no explanations. The query must start with SELECT."
     user_prompt = f"I have a table named `{parent_view}` with the following schema: {schema_str}.\n\nTask: {request.prompt}\n\nWrite the DuckDB SQL SELECT statement to accomplish this."
     
-    # 4. Call Google Gemini via google-genai
     try:
         from google import genai
         client = genai.Client(api_key=request.api_key)
@@ -241,7 +221,6 @@ async def ai_generate_sql(request: AIGenerateRequest) -> Dict[str, str]:
             contents=[system_instruction, user_prompt]
         )
         sql = response.text.strip()
-        # Clean up markdown if the LLM hallucinated it
         if sql.startswith("```sql"):
             sql = sql[6:]
         if sql.startswith("```"):
@@ -258,26 +237,29 @@ def browse_file():
     import tkinter as tk
     from tkinter import filedialog
     
-    # Create a root window and hide it
     root = tk.Tk()
     root.withdraw()
     
-    # Force it to the top so it doesn't get lost behind the browser
     root.attributes('-topmost', True)
-    
     # Open the file dialog
-    file_path = filedialog.askopenfilename(
-        title="Select Data File",
+    file_paths = filedialog.askopenfilenames(
+        title="Select Data Files",
         filetypes=[
-            ("Data Files", "*.csv *.json *.parquet *.xlsx"),
+            ("Data Files", "*.csv *.json *.parquet *.xlsx *.xls"),
             ("All Files", "*.*")
         ]
     )
     
-    # Destroy the root window
     root.destroy()
     
-    return {"path": file_path}
+    if file_paths:
+        if len(file_paths) == 1:
+            return {"path": file_paths[0]}
+        else:
+            import json
+            return {"path": json.dumps(file_paths)}
+            
+    return {"path": ""}
 
 @app.get("/api/download/{view_name}")
 def download_view(view_name: str):
@@ -285,7 +267,6 @@ def download_view(view_name: str):
     import os
     from fastapi.responses import FileResponse
     
-    # Ensure view name matches the expected pattern for security
     if not view_name.startswith("node_"):
         raise HTTPException(status_code=400, detail="Invalid view name")
         
@@ -301,11 +282,9 @@ def download_view(view_name: str):
 def preview_node(node_id: str):
     view_name = f"node_{node_id.replace('-', '_')}"
     try:
-        # Fetch metadata
         col_info = duck_conn.execute(f"DESCRIBE {view_name}").fetchall()
         columns = [{"name": row[0], "type": row[1]} for row in col_info]
         
-        # Fetch sample
         result = duck_conn.execute(f"SELECT * FROM {view_name} LIMIT 10").fetchall()
         col_names = [c["name"] for c in columns]
         sample_data = [dict(zip(col_names, row)) for row in result]
@@ -323,15 +302,10 @@ from fastapi.responses import HTMLResponse
 async def health_check() -> Dict[str, str]:
     return {"status": "ok"}
 
-# ------------------------------------------------------------
-# Mount React Frontend for Executable Packaging
-# ------------------------------------------------------------
 if getattr(sys, 'frozen', False):
-    # Running in a PyInstaller bundle
     base_path = sys._MEIPASS
     frontend_dist = os.path.join(base_path, "dist")
 else:
-    # Running in normal dev mode
     base_path = os.path.dirname(os.path.abspath(__file__))
     frontend_dist = os.path.join(base_path, "..", "frontend", "dist")
 

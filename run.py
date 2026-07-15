@@ -13,7 +13,6 @@ def main():
     frontend_dir = os.path.join(os.path.dirname(__file__), "frontend")
 
     print("[1/2] Starting Python FastAPI Backend...")
-    # Launch uvicorn
     backend_process = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "main:app", "--reload", "--port", "8000"],
         cwd=backend_dir,
@@ -22,7 +21,6 @@ def main():
     )
     
     print("[2/2] Starting React Vite Frontend...")
-    # Launch Vite dev server
     frontend_process = subprocess.Popen(
         "npm run dev",
         cwd=frontend_dir,
@@ -34,12 +32,10 @@ def main():
     print("\nBoth servers are successfully starting!")
     print("Press Ctrl+C at any time in this window to stop both servers.\n")
     
-    # Wait a few seconds for servers to boot, then open the browser automatically
     time.sleep(3)
     webbrowser.open("http://localhost:5173")
     
     try:
-        # Keep the main thread alive
         while True:
             time.sleep(1)
     except KeyboardInterrupt:

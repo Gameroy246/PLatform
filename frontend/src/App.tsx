@@ -48,16 +48,13 @@ export default function App() {
   
   const selectedNode = nodes.find(n => n.selected) || null;
   
-  // State variables for DuckDB execution results
   const [sqlOutput, setSqlOutput] = useState("");
   const [executionLogs, setExecutionLogs] = useState<string[]>([]);
   const [previewData, setPreviewData] = useState<any[]>([]);
   const [pipelineMetadata, setPipelineMetadata] = useState<any>(null);
 
-  // Global Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't trigger if user is typing in an input/textarea
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       
       if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
@@ -76,7 +73,6 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [undo, redo, duplicateSelected, deleteSelected]);
 
-  // --- DRAG AND DROP HANDLERS ---
   const onDragStart = (event: DragEvent, nodeType: string, operation?: string) => {
     event.dataTransfer.setData('application/reactflow', JSON.stringify({ type: nodeType, operation }));
     event.dataTransfer.effectAllowed = 'move';
@@ -163,7 +159,6 @@ export default function App() {
     event.dataTransfer.dropEffect = 'move';
   };
 
-  // --- PIPELINE EXECUTION ---
   const handleRunPipeline = async () => {
     try {
       const mappedNodes = nodes.map(node => {
@@ -177,15 +172,33 @@ export default function App() {
         switch (op) {
           case 'csvInput': 
             const csvFile = String(node.data.file || '');
-            if (csvFile.toLowerCase().endsWith('.xlsx') || csvFile.toLowerCase().endsWith('.xls')) {
-              generatedSql = `__EXCEL__ '${csvFile}'`;
+            if (csvFile.startsWith('[')) {
+              const files = JSON.parse(csvFile);
+              if (files.length > 0 && (files[0].toLowerCase().endsWith('.xlsx') || files[0].toLowerCase().endsWith('.xls'))) {
+                generatedSql = `__EXCEL_MULTI__ ${csvFile}`;
+              } else {
+                generatedSql = `SELECT * FROM read_csv_auto(${csvFile})`;
+              }
             } else {
-              generatedSql = `SELECT * FROM read_csv_auto('${csvFile}')`;
+              if (csvFile.toLowerCase().endsWith('.xlsx') || csvFile.toLowerCase().endsWith('.xls')) {
+                generatedSql = `__EXCEL__ '${csvFile}'`;
+              } else {
+                generatedSql = `SELECT * FROM read_csv_auto('${csvFile}')`;
+              }
             }
             break;
-          case 'jsonInput': generatedSql = `SELECT * FROM read_json_auto('${node.data.file || ''}')`; break;
-          case 'parquetInput': generatedSql = `SELECT * FROM read_parquet('${node.data.file || ''}')`; break;
-          case 'excelInput': generatedSql = `__EXCEL__ '${node.data.file || ''}'`; break;
+          case 'jsonInput': 
+            const jFile = String(node.data.file || '');
+            generatedSql = `SELECT * FROM read_json_auto(${jFile.startsWith('[') ? jFile : `'${jFile}'`})`; 
+            break;
+          case 'parquetInput': 
+            const pFile = String(node.data.file || '');
+            generatedSql = `SELECT * FROM read_parquet(${pFile.startsWith('[') ? pFile : `'${pFile}'`})`; 
+            break;
+          case 'excelInput': 
+            const eFile = String(node.data.file || '');
+            generatedSql = eFile.startsWith('[') ? `__EXCEL_MULTI__ ${eFile}` : `__EXCEL__ '${eFile}'`; 
+            break;
           case 'postgresInput': generatedSql = `SELECT * FROM postgres_scan('${node.data.connection_string || ''}', '${node.data.table || ''}')`; break;
           
           case 'removeDuplicates': generatedSql = `SELECT DISTINCT * FROM ${parent1}`; break;
@@ -269,7 +282,6 @@ export default function App() {
       }
       setActiveTab('preview'); 
       
-      // Prompt for full result download
       setTimeout(() => {
         if (window.confirm("Pipeline executed successfully! Do you want to download the full result as a CSV?")) {
           const match = data.final_sql.match(/FROM (node_[a-zA-Z0-9_-]+)/);
@@ -284,7 +296,6 @@ export default function App() {
       const msg = error.response?.data?.detail || error.message;
       setExecutionLogs([`[CRITICAL] Execution Failed: ${msg}`]);
       
-      // Attempt to extract node statuses even on failure if backend sent it
       if (error.response?.data?.node_statuses) {
         setNodeStatuses(error.response.data.node_statuses);
       }

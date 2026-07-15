@@ -15,7 +15,6 @@ export default function CommandPalette({ onAddNode, onRunPipeline, onOpenVariabl
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'p' || e.key === 'P')) {
-        // Prevent default browser search/print
         if (e.key === 'k' || e.shiftKey) {
           e.preventDefault();
           setIsOpen((prev) => !prev);

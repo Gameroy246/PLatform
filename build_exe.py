@@ -12,7 +12,6 @@ def main():
     print("Building Local Data Architect Executable...")
     print("="*50)
     
-    # 1. Build React Frontend
     print("\n[1/3] Building React Frontend (Vite)...")
     try:
         subprocess.run("npm run build", shell=True, cwd=frontend_dir, check=True)
@@ -21,11 +20,9 @@ def main():
         print("Error building frontend! Make sure you have Node.js installed.")
         sys.exit(1)
         
-    # 2. Install PyInstaller if missing
     print("\n[2/3] Checking PyInstaller...")
     subprocess.run([sys.executable, "-m", "pip", "install", "pyinstaller"], check=True)
     
-    # 3. Package Backend with PyInstaller
     print("\n[3/3] Packaging Python Backend + Frontend into EXE...")
     pyinstaller_cmd = [
         "pyinstaller",
@@ -46,7 +43,6 @@ def main():
     try:
         subprocess.run(pyinstaller_cmd, cwd=backend_dir, check=True, shell=True)
         
-        # Move executable to root directory
         exe_path = os.path.join(backend_dir, "dist", "LocalDataArchitect.exe")
         dest_path = os.path.join(base_dir, "LocalDataArchitect.exe")
         

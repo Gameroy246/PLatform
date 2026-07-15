@@ -22,7 +22,6 @@ export default function Dashboard({ data, columns }: DashboardProps) {
   const processedData = useMemo(() => {
     if (!data || data.length === 0) return [];
     
-    // For pie charts, we need to aggregate data if there are many rows
     if (chartType === 'pie') {
       const agg: Record<string, number> = {};
       data.forEach(row => {

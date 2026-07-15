@@ -2,7 +2,6 @@ import { Handle, Position } from '@xyflow/react';
 import { ArrowRightLeft, Filter, Calculator } from 'lucide-react';
 
 export default function TransformNode({ data }: { data: any }) {
-  // Determine icon based on category/operation (just a basic mapping)
   const isCleaning = ['removeNulls', 'removeDuplicates', 'fillMissing', 'typeConversion', 'trimWhitespace', 'textCasing', 'replaceText', 'regexExtract', 'dropColumns', 'renameColumn'].includes(data.operation);
   const isAgg = ['groupBy', 'windowFunction', 'pivotTable', 'unpivotTable', 'rollup', 'summaryStats'].includes(data.operation);
   

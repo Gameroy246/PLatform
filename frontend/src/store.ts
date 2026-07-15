@@ -1,13 +1,11 @@
 import { create } from 'zustand';
 
-// 1. Import JavaScript Functions
 import {
   addEdge,
   applyNodeChanges,
   applyEdgeChanges,
 } from '@xyflow/react';
 
-// 2. Import TypeScript Types (Vite will safely ignore these during compilation)
 import type {
   Connection,
   Edge,
@@ -24,7 +22,6 @@ type HistoryState = {
   edges: Edge[];
 };
 
-// Define the shape of our global state
 type RFState = {
   nodes: Node[];
   edges: Edge[];
@@ -44,7 +41,6 @@ type RFState = {
   setNodeStatuses: (statuses: Record<string, any>) => void;
 };
 
-// Create the Zustand store
 export const useStore = create<RFState>((set, get) => ({
   nodes: [],
   edges: [],
@@ -53,7 +49,6 @@ export const useStore = create<RFState>((set, get) => ({
   
   saveHistory: () => {
     const { nodes, edges, history } = get();
-    // Save current state to history (limit to 50)
     set({
       history: [...history, { nodes, edges }].slice(-50),
       future: [],
@@ -150,8 +145,6 @@ export const useStore = create<RFState>((set, get) => ({
   },
   
   onSelectionChange: () => {
-    // selection is already handled by applyNodeChanges,
-    // but this callback is here to handle any specific selection logic
   },
   
   addNode: (node: Node) => {
