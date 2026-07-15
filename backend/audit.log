@@ -1,0 +1,5 @@
+2026-07-15 17:54:26,950 - NODE_EXEC: csvInput_jy1q2sjy2 | DURATION: 100ms | ROWS: 50 | EXCEL: C:/Users/asmit/Downloads/Nifty 50 Stocks List 5paisa.com.xlsx
+2026-07-15 17:54:26,952 - NODE_EXEC: sortRows_dfwcpjybw | DURATION: 0ms | ROWS: 50 | SQL: SELECT * FROM node_csvInput_jy1q2sjy2 ORDER BY RSI DESC
+2026-07-15 17:55:57,235 - NODE_EXEC: csvInput_jy1q2sjy2 | DURATION: 100ms | ROWS: 50 | EXCEL: C:/Users/asmit/Downloads/Nifty 50 Stocks List 5paisa.com.xlsx
+2026-07-15 17:55:57,237 - NODE_EXEC: sortRows_dfwcpjybw | DURATION: 1ms | ROWS: 50 | SQL: SELECT * FROM node_csvInput_jy1q2sjy2 ORDER BY RSI DESC
+2026-07-15 17:55:57,240 - NODE_EXEC: exportCsv_4v1n069a2 | DURATION: 1ms | ROWS: 50 | SQL: SELECT * FROM node_sortRows_dfwcpjybw
