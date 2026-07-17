@@ -46,7 +46,7 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
 
   if (!selectedNode) {
     return (
-      <aside className="w-72 border-l border-border bg-bg p-4 z-10 hidden lg:block shadow-shadow h-full">
+      <aside className="w-72 border-l border-border bg-code-bg p-4 z-10 hidden lg:block relative">
         <h2 className="text-xs font-bold text-text uppercase tracking-wider !m-0 mb-2">
           Properties
         </h2>
@@ -59,7 +59,7 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
 
   return (
     <>
-    <aside className="w-72 border-l border-border bg-bg flex flex-col z-10 hidden lg:block shadow-shadow h-full">
+    <aside className="w-72 border-l border-border bg-code-bg flex flex-col z-10 hidden lg:block relative">
       <div className="p-4 border-b border-border">
         <h2 className="text-xs font-bold text-text uppercase tracking-wider !m-0">
           Properties

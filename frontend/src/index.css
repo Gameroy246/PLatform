@@ -1,7 +1,6 @@
 @import "tailwindcss";
 
 @theme {
-  /* Tailwind v4 Theme Integration mapping to your CSS variables */
   --color-text: var(--text);
   --color-text-h: var(--text-h);
   --color-bg: var(--bg);
@@ -10,35 +9,32 @@
   --color-accent: var(--accent);
   --color-accent-bg: var(--accent-bg);
   --color-accent-border: var(--accent-border);
-  --color-social-bg: var(--social-bg);
   --shadow-shadow: var(--shadow);
 
   /* Fonts */
-  --font-sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --font-heading: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-heading: 'Inter', system-ui, -apple-system, sans-serif;
   --font-mono: ui-monospace, Consolas, monospace;
 }
 
-/* Base Light Mode Variables */
+/* Airbyte-inspired Enterprise Light Theme */
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow: rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+  --text: #4B5563; /* Gray 600 */
+  --text-h: #111827; /* Gray 900 */
+  --bg: #F9FAFB; /* Gray 50 (Canvas background) */
+  --border: #E5E7EB; /* Gray 200 */
+  --code-bg: #FFFFFF; /* Pure White (Surfaces/Cards) */
+  --accent: #615EFC; /* Airbyte Indigo */
+  --accent-bg: #EEF2FF; /* Indigo 50 */
+  --accent-border: #C7D2FE; /* Indigo 200 */
+  --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --heading: 'Inter', system-ui, -apple-system, sans-serif;
   --mono: ui-monospace, Consolas, monospace;
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
+  font: 14px/1.5 var(--sans);
+  color-scheme: light;
   color: var(--text);
   background: var(--bg);
   font-synthesis: none;
@@ -47,129 +43,73 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-@media (max-width: 1024px) {
-  :root {
-    font-size: 16px;
-  }
-}
-
-/* Dark Mode Overrides */
+/* Disable dark mode by overriding with light variables */
 :root.dark {
-  --text: #a1a1aa; /* Zinc 400 */
-  --text-h: #f4f4f5; /* Zinc 100 */
-  --bg: #09090b; /* Zinc 950 */
-  --border: rgba(255, 255, 255, 0.1);
-  --code-bg: rgba(255, 255, 255, 0.03);
-  --accent: #8b5cf6; /* Violet 500 */
-  --accent-bg: rgba(139, 92, 246, 0.15);
-  --accent-border: rgba(139, 92, 246, 0.5);
-  --social-bg: rgba(255, 255, 255, 0.02);
-  --shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  --text: #4B5563;
+  --text-h: #111827;
+  --bg: #F9FAFB;
+  --border: #E5E7EB;
+  --code-bg: #FFFFFF;
+  --accent: #615EFC;
+  --accent-bg: #EEF2FF;
+  --accent-border: #C7D2FE;
 }
 
-:root.dark #social .button-icon {
-  filter: invert(1) brightness(2);
+/* Custom UI Utility Classes */
+.hover-lift {
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.hover-lift:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.025);
 }
 
-/* Fixed Layout Engine (Edge-to-Edge) */
-body {
-  margin: 0;
-  padding: 0;
-  overflow: hidden; /* Prevents scrollbars from breaking the canvas */
-  background-color: var(--bg);
+/* React Flow Overrides */
+.react-flow__node {
+  border-radius: 8px;
+}
+.react-flow__handle {
+  width: 10px !important;
+  height: 10px !important;
+  border-radius: 2px !important; /* Squarish handles */
+  background: #FFFFFF !important;
+  border: 2px solid #E5E7EB !important;
+  transition: all 0.2s ease;
+}
+.react-flow__handle:hover {
+  border-color: var(--accent) !important;
+  background: var(--accent-bg) !important;
+}
+.react-flow__handle-connecting {
+  background: var(--accent) !important;
+  border-color: var(--accent) !important;
+}
+.react-flow__edge-path {
+  stroke: #9CA3AF !important; /* Gray 400 */
+  stroke-width: 2 !important;
+}
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke: var(--accent) !important;
+  stroke-width: 3 !important;
+}
+.react-flow__controls button {
+  background-color: var(--code-bg) !important;
+  border-color: var(--border) !important;
+  fill: var(--text) !important;
 }
 
-#root {
-  width: 100vw;
-  height: 100vh;
-  margin: 0;
-  padding: 0;
-  text-align: left;
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
-  background-color: var(--bg);
+/* Scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
 }
-
-/* Typography Specifics */
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
+::-webkit-scrollbar-track {
+  background: transparent;
 }
-
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-}
-
-@media (max-width: 1024px) {
-  h1 {
-    font-size: 36px;
-    margin: 20px 0;
-  }
-  h2 {
-    font-size: 20px;
-  }
-}
-
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-}
-
-p {
-  margin: 0;
-}
-
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
+::-webkit-scrollbar-thumb {
+  background: #D1D5DB;
   border-radius: 4px;
-  color: var(--text-h);
 }
-
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
-}
-
-/* Glassmorphism Utilities */
-.glass-panel {
-  background: rgba(255, 255, 255, 0.7);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(0, 0, 0, 0.08);
-}
-:root.dark .glass-panel {
-  background: rgba(9, 9, 11, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.glass-header {
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
-}
-:root.dark .glass-header {
-  background: rgba(9, 9, 11, 0.85);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-/* Micro-animations */
-button, .cursor-pointer, .cursor-grab {
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.hover-lift:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.2);
+::-webkit-scrollbar-thumb:hover {
+  background: #9CA3AF;
 }

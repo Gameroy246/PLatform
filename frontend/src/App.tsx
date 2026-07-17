@@ -343,7 +343,7 @@ export default function App() {
       )}
 
       {/* Top Bar */}
-      <header className="flex items-center justify-between px-6 py-4 glass-header shadow-sm z-10 relative">
+      <header className="flex items-center justify-between px-6 py-4 bg-code-bg border-b border-border shadow-sm z-10 relative">
         <div className="flex items-center gap-3">
           <Database className="w-6 h-6 text-accent" />
           <h1 className="text-xl font-bold text-text-h !m-0 !tracking-normal">
@@ -374,7 +374,7 @@ export default function App() {
       <div className="flex flex-1 overflow-hidden">
         
         {/* Left Sidebar - Node Library */}
-        <aside className="w-64 border-r border-border glass-panel flex flex-col overflow-hidden z-10 shadow-shadow relative">
+        <aside className="w-64 border-r border-border bg-code-bg flex flex-col overflow-hidden z-10 relative">
           <div className="p-4 border-b border-border">
             <h2 className="text-xs font-bold text-text uppercase tracking-wider !m-0">
               Node Library
@@ -495,7 +495,7 @@ export default function App() {
             nodeTypes={nodeTypes}
             onDrop={onDrop}
             onDragOver={onDragOver}
-            colorMode="system" 
+            colorMode="light" 
             fitView
             snapToGrid
             snapGrid={[16, 16]}

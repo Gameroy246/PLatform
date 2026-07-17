@@ -6,12 +6,12 @@ export default function TransformNode({ data }: { data: any }) {
   const isAgg = ['groupBy', 'windowFunction', 'pivotTable', 'unpivotTable', 'rollup', 'summaryStats'].includes(data.operation);
   
   return (
-    <div className="px-4 py-3 min-w-[180px] rounded-lg bg-bg border border-border shadow-shadow hover:border-accent-border transition-colors">
+    <div className={`px-4 py-3 min-w-[180px] rounded-md bg-code-bg border-l-4 ${isCleaning ? 'border-l-orange-400' : isAgg ? 'border-l-purple-400' : 'border-l-green-400'} border-y border-r border-border shadow-sm hover:shadow-md transition-shadow relative`}>
       {/* Input Connection Handle (Left) */}
       <Handle 
         type="target" 
         position={Position.Left} 
-        className="w-3 h-3 bg-text-muted border-2 border-bg" 
+        className="w-2 h-4 rounded-none bg-border border-0 -ml-1" 
       />
 
       {/* Node Header */}
@@ -29,7 +29,7 @@ export default function TransformNode({ data }: { data: any }) {
       <Handle 
         type="source" 
         position={Position.Right} 
-        className="w-3 h-3 bg-accent border-2 border-bg" 
+        className="w-2 h-4 rounded-none bg-accent border-0 -mr-1" 
       />
     </div>
   );
