@@ -1,44 +1,36 @@
-# Local Data Architect 🚀
+This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
-Local Data Architect is a powerful, standalone ETL (Extract, Transform, Load) platform that brings Tableau-level data processing directly to your local machine.
+## Getting Started
 
-## ✨ Features
-* **30+ Powerful Data Nodes:** Drag and drop nodes for Input, Cleaning, Transformation, Aggregation, and Export.
-* **Lightning Fast:** Powered by DuckDB for blazing fast in-memory SQL execution.
-* **Pandas Excel Engine:** Native support for `.xlsx` and `.xls` files.
-* **Interactive Dashboard:** Auto-generates Bar, Line, Scatter, and Pie charts directly from your data using Recharts.
-* **Schema Preview:** Peek into the exact column schema and top 10 rows of any node in your pipeline.
-* **Standalone Executable:** Run the entire application natively on Windows with zero dependencies.
+First, run the development server:
 
-## 🚀 How to Run
-
-### Option 1: Standalone Windows Executable (Recommended)
-1. Download the latest `LocalDataArchitect.exe` from the [Releases](#) page.
-2. Double-click the `.exe` file.
-3. The server will start in a terminal window, and your browser will automatically open the application!
-
-### Option 2: Run from Source
-If you are a developer and want to run the code locally:
-
-1. **Install Dependencies:**
-   ```bash
-   cd frontend
-   npm install
-   
-   cd ../backend
-   pip install -r requirements.txt # (duckdb, pandas, fastapi, uvicorn, openpyxl, google-genai)
-   ```
-
-2. **Start the Application:**
-   From the root folder, run the orchestrator script:
-   ```bash
-   python run.py
-   ```
-   This will simultaneously boot up the Vite frontend and FastAPI backend.
-
-## 🛠️ Building the Executable
-If you modify the source code and want to generate a new `.exe` file:
 ```bash
-python build_exe.py
+npm run dev
+# or
+yarn dev
+# or
+pnpm dev
+# or
+bun dev
 ```
-This script will compile the React frontend, package the Python backend with PyInstaller, and output a fresh `LocalDataArchitect.exe` in the root folder.
+
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+
+You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+
+This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+
+## Learn More
+
+To learn more about Next.js, take a look at the following resources:
+
+- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
+- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+
+You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+
+## Deploy on Vercel
+
+The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+
+Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
