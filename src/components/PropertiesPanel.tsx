@@ -1,22 +1,120 @@
 "use client";
-import { useState } from 'react';
-import type { Node } from '@xyflow/react';
+import { useState, useRef, useEffect } from 'react';
+import type { Node, Edge } from '@xyflow/react';
 import Editor from '@monaco-editor/react';
 import axios from 'axios';
-import { FolderOpen } from 'lucide-react';
+import { FolderOpen, Settings2, Trash2, ArrowRight, ArrowDownRight } from 'lucide-react';
 
 interface PropertiesPanelProps {
   selectedNode: Node | null;
   onUpdateNode: (id: string, data: any) => void;
   onAIGenerate?: (id: string, prompt: string) => Promise<void>;
+  nodes?: Node[];
+  edges?: Edge[];
 }
 
-export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenerate }: PropertiesPanelProps) {
+export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenerate, nodes = [], edges = [] }: PropertiesPanelProps) {
   const [activeTab, setActiveTab] = useState<'settings' | 'description' | 'metadata'>('settings');
   const [isBrowsing, setIsBrowsing] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [previewData, setPreviewData] = useState<any>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState('');
+  
+  const [realtimeSchema, setRealtimeSchema] = useState<{name: string, type: string}[]>([]);
+  const [schemaLoading, setSchemaLoading] = useState(false);
+
+  useEffect(() => {
+    if (!selectedNode || !['transform', 'join'].includes(selectedNode.type || '') && !['dataSource'].includes(selectedNode.type || '')) {
+      setRealtimeSchema([]);
+      return;
+    }
+    
+    // For Data Source nodes, we check if they already have columns attached from upload
+    if (selectedNode.type === 'dataSource') {
+       if (selectedNode.data.columns) {
+         setRealtimeSchema((selectedNode.data.columns as string[]).map(c => ({name: c, type: 'UNKNOWN'})));
+       } else {
+         setRealtimeSchema([]);
+       }
+       return;
+    }
+
+    let isMounted = true;
+    const fetchSchema = async () => {
+      setSchemaLoading(true);
+      try {
+        const payload = { nodes, edges, targetNodeId: selectedNode.id };
+        const res = await axios.post('/api/schema', payload);
+        if (isMounted && res.data.schema) {
+          setRealtimeSchema(res.data.schema);
+        }
+      } catch (err) {
+        console.error("Failed to fetch mid-pipeline schema", err);
+      } finally {
+        if (isMounted) setSchemaLoading(false);
+      }
+    };
+
+    const timer = setTimeout(fetchSchema, 500);
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
+  }, [selectedNode?.id, nodes, edges]);
+
+  
+  const ColumnSelect = ({ value, onChange, placeholder }: { value: string, onChange: (val: string) => void, placeholder?: string }) => (
+    <select 
+      value={value || ''} 
+      onChange={(e) => onChange(e.target.value)}
+      className="w-full px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
+    >
+      <option value="" disabled>{placeholder || 'Select a column...'}</option>
+      {realtimeSchema.map(c => <option key={c.name} value={c.name}>{c.name} ({c.type})</option>)}
+    </select>
+  );
+
+  const ValueSelect = ({ column, value, onChange, placeholder }: { column: string, value: string, onChange: (val: string) => void, placeholder?: string }) => {
+    const [values, setValues] = useState<string[]>([]);
+    const [loading, setLoading] = useState(false);
+    
+    useEffect(() => {
+      if (!column || !selectedNode) {
+        setValues([]);
+        return;
+      }
+      let isMounted = true;
+      const fetchValues = async () => {
+        setLoading(true);
+        try {
+          const payload = { nodes, edges, targetNodeId: selectedNode.id, columnName: column };
+          const res = await axios.post('/api/values', payload);
+          if (isMounted && res.data.values) {
+            setValues(res.data.values);
+          }
+        } catch (err) {
+          console.error("Failed to fetch values", err);
+        } finally {
+          if (isMounted) setLoading(false);
+        }
+      };
+      
+      const timer = setTimeout(fetchValues, 500);
+      return () => { isMounted = false; clearTimeout(timer); };
+    }, [column, selectedNode?.id, nodes, edges]);
+    
+    return (
+      <select 
+        value={value || ''} 
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
+      >
+        <option value="" disabled>{loading ? 'Loading...' : (placeholder || 'Select a value...')}</option>
+        {values.map(v => <option key={String(v)} value={String(v)}>{String(v)}</option>)}
+      </select>
+    );
+  };
 
   const handlePreviewNode = async () => {
     try {
@@ -31,17 +129,57 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
     }
   };
 
-  const handleBrowseFile = async () => {
+  const handleBrowseFile = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
     try {
       setIsBrowsing(true);
-      const response = await axios.get('http://localhost:8000/api/browse-file');
-      if (response.data.path) {
-        onUpdateNode(selectedNode!.id, { file: response.data.path });
+      
+      const newPaths: string[] = [];
+      let lastHeaders: string[] = [];
+
+      for (let i = 0; i < files.length; i++) {
+        const formData = new FormData();
+        formData.append("file", files[i]);
+
+        const response = await axios.post('/api/upload', formData, {
+          headers: { "Content-Type": "multipart/form-data" }
+        });
+
+        if (response.data.path) {
+          newPaths.push(response.data.path);
+        }
+        if (response.data.headers) {
+          lastHeaders = response.data.headers;
+        }
       }
+
+      let currentFiles: string[] = [];
+      try {
+        if (selectedNode!.data.file) {
+           const parsed = JSON.parse(selectedNode!.data.file as string);
+           if (Array.isArray(parsed)) currentFiles = parsed;
+           else currentFiles = [selectedNode!.data.file as string];
+        }
+      } catch (e) {
+        currentFiles = selectedNode!.data.file ? [selectedNode!.data.file as string] : [];
+      }
+
+      const updatedFiles = [...currentFiles, ...newPaths];
+      onUpdateNode(selectedNode!.id, { file: JSON.stringify(updatedFiles), columns: lastHeaders });
+
     } catch (error) {
-      console.error("Failed to browse for file", error);
+      console.error("Failed to upload file", error);
     } finally {
       setIsBrowsing(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
     }
   };
 
@@ -57,6 +195,11 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
       </aside>
     );
   }
+  let fileAccept = "*/*";
+  if (selectedNode.data.operation === 'csvInput') fileAccept = ".csv";
+  else if (selectedNode.data.operation === 'jsonInput') fileAccept = ".json";
+  else if (selectedNode.data.operation === 'parquetInput') fileAccept = ".parquet";
+
 
   return (
     <>
@@ -120,22 +263,45 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
 
             {(selectedNode.data.operation === 'csvInput' || selectedNode.data.operation === 'jsonInput' || selectedNode.data.operation === 'parquetInput' || selectedNode.data.operation === 'excelInput') && (
               <div className="flex flex-col gap-2">
-                <label className="text-xs font-semibold text-text-h">File Path</label>
-                <div className="flex gap-2">
+                <label className="text-xs font-semibold text-text-h">Uploaded Files</label>
+                <div className="flex flex-col gap-2 bg-code-bg p-2 rounded-md border border-border max-h-40 overflow-y-auto custom-scrollbar">
+                  {(() => {
+                    let fileList: string[] = [];
+                    try {
+                      const parsed = JSON.parse(selectedNode.data.file as string || '[]');
+                      fileList = Array.isArray(parsed) ? parsed : (selectedNode.data.file ? [selectedNode.data.file as string] : []);
+                    } catch (e) {
+                      fileList = selectedNode.data.file ? [selectedNode.data.file as string] : [];
+                    }
+                    
+                    return fileList.length > 0 ? fileList.map((f, i) => (
+                      <div key={i} className="flex justify-between items-center text-xs bg-bg p-1 rounded border border-border">
+                        <span className="truncate flex-1 max-w-[200px]" title={f}>{f.split(/[\\/]/).pop()}</span>
+                        <button onClick={() => {
+                          const newArr = [...fileList];
+                          newArr.splice(i, 1);
+                          onUpdateNode(selectedNode.id, { file: JSON.stringify(newArr) });
+                        }} className="text-red-500 hover:bg-red-500/10 p-1 rounded"><Trash2 className="w-3 h-3" /></button>
+                      </div>
+                    )) : <div className="text-xs text-text-muted text-center py-2">No files uploaded.</div>;
+                  })()}
+                </div>
+                <div className="flex gap-2 mt-1">
                   <input 
-                    type="text" 
-                    value={selectedNode.data.file as string || ''}
-                    onChange={(e) => onUpdateNode(selectedNode.id, { file: e.target.value })}
-                    placeholder="e.g. data.csv"
-                    className="flex-1 px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors min-w-0"
+                    type="file" 
+                    multiple
+                    ref={fileInputRef} 
+                    className="hidden" 
+                    onChange={handleFileUpload}
+                    accept={fileAccept}
                   />
                   <button 
                     onClick={handleBrowseFile}
                     disabled={isBrowsing}
-                    className="px-3 py-2 bg-accent text-white rounded-md text-sm font-medium hover-lift disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    className="w-full px-3 py-2 bg-accent text-white rounded-md text-sm font-medium hover-lift disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                   >
                     <FolderOpen className="w-4 h-4" />
-                    Browse
+                    {isBrowsing ? 'Uploading...' : 'Browse Files'}
                   </button>
                 </div>
               </div>
@@ -174,14 +340,23 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
 
             {selectedNode.data.operation === 'removeNulls' && (
               <div className="flex flex-col gap-2">
-                <label className="text-xs font-semibold text-text-h">Target Column (Optional)</label>
-                <input 
-                  type="text" 
-                  value={selectedNode.data.column as string || ''}
-                  onChange={(e) => onUpdateNode(selectedNode.id, { column: e.target.value })}
-                  placeholder="e.g. email (defaults to 'id')"
-                  className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
-                />
+                <label className="text-xs font-semibold text-text-h">Filter Condition</label>
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <ColumnSelect value={selectedNode.data.filterCol as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { filterCol: val })} placeholder="Column" />
+                  </div>
+                  <select value={selectedNode.data.filterOp as string || '='} onChange={(e) => onUpdateNode(selectedNode.id, { filterOp: e.target.value })} className="w-16 px-1 py-2 bg-code-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors">
+                    <option value="=">=</option>
+                    <option value="!=">!=</option>
+                    <option value=">">&gt;</option>
+                    <option value="<">&lt;</option>
+                    <option value=">=">&gt;=</option>
+                    <option value="<=">&lt;=</option>
+                  </select>
+                  <div className="flex-1">
+                    <ValueSelect column={selectedNode.data.filterCol as string} value={selectedNode.data.filterVal as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { filterVal: val })} placeholder="Value" />
+                  </div>
+                </div>
               </div>
             )}
 
@@ -189,13 +364,7 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
               <>
                 <div className="flex flex-col gap-2">
                   <label className="text-xs font-semibold text-text-h">Target Column</label>
-                  <input 
-                    type="text" 
-                    value={selectedNode.data.column as string || ''}
-                    onChange={(e) => onUpdateNode(selectedNode.id, { column: e.target.value })}
-                    placeholder="e.g. age"
-                    className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
-                  />
+                  <ColumnSelect value={selectedNode.data.column as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { column: val })} placeholder="e.g. age" />
                 </div>
                 <div className="flex flex-col gap-2 mt-2">
                   <label className="text-xs font-semibold text-text-h">Default Value (String or Number)</label>
@@ -242,7 +411,7 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
             {selectedNode.data.operation === 'trimWhitespace' && (
               <div className="flex flex-col gap-2">
                 <label className="text-xs font-semibold text-text-h">Target Column</label>
-                <input type="text" value={selectedNode.data.column as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { column: e.target.value })} placeholder="e.g. name" className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors" />
+                <ColumnSelect value={selectedNode.data.column as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { column: val })} placeholder="e.g. name" />
               </div>
             )}
 
@@ -250,7 +419,7 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
               <>
                 <div className="flex flex-col gap-2">
                   <label className="text-xs font-semibold text-text-h">Target Column</label>
-                  <input type="text" value={selectedNode.data.column as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { column: e.target.value })} placeholder="e.g. status" className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors" />
+                  <ColumnSelect value={selectedNode.data.column as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { column: val })} placeholder="e.g. status" />
                 </div>
                 <div className="flex flex-col gap-2 mt-2">
                   <label className="text-xs font-semibold text-text-h">Casing</label>
@@ -266,12 +435,12 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
               <>
                 <div className="flex flex-col gap-2">
                   <label className="text-xs font-semibold text-text-h">Target Column</label>
-                  <input type="text" value={selectedNode.data.column as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { column: e.target.value })} placeholder="e.g. description" className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text" />
+                  <ColumnSelect value={selectedNode.data.column as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { column: val })} placeholder="e.g. description" />
                 </div>
                 <div className="flex gap-2 mt-2">
                   <div className="flex flex-col gap-2 w-1/2">
-                    <label className="text-xs font-semibold text-text-h">Old Text</label>
-                    <input type="text" value={selectedNode.data.oldText as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { oldText: e.target.value })} placeholder="e.g. Foo" className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text" />
+                    <label className="text-xs font-semibold text-text-h">Old Text (Existing)</label>
+                    <ValueSelect column={selectedNode.data.column as string} value={selectedNode.data.oldText as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { oldText: val })} placeholder="Select value..." />
                   </div>
                   <div className="flex flex-col gap-2 w-1/2">
                     <label className="text-xs font-semibold text-text-h">New Text</label>
@@ -285,7 +454,7 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
               <>
                 <div className="flex flex-col gap-2">
                   <label className="text-xs font-semibold text-text-h">Target Column</label>
-                  <input type="text" value={selectedNode.data.column as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { column: e.target.value })} placeholder="e.g. email" className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text" />
+                  <ColumnSelect value={selectedNode.data.column as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { column: val })} placeholder="e.g. email" />
                 </div>
                 <div className="flex flex-col gap-2 mt-2">
                   <label className="text-xs font-semibold text-text-h">Regex Pattern</label>
@@ -305,7 +474,7 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
               <div className="flex gap-2">
                 <div className="flex flex-col gap-2 w-1/2">
                   <label className="text-xs font-semibold text-text-h">Old Name</label>
-                  <input type="text" value={selectedNode.data.oldCol as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { oldCol: e.target.value })} placeholder="e.g. user_id" className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text" />
+                  <ColumnSelect value={selectedNode.data.oldCol as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { oldCol: val })} placeholder="e.g. user_id" />
                 </div>
                 <div className="flex flex-col gap-2 w-1/2">
                   <label className="text-xs font-semibold text-text-h">New Name</label>
@@ -332,7 +501,7 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
               <div className="flex gap-2">
                 <div className="flex flex-col gap-2 w-2/3">
                   <label className="text-xs font-semibold text-text-h">Sort Column</label>
-                  <input type="text" value={selectedNode.data.column as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { column: e.target.value })} placeholder="e.g. created_at" className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text" />
+                  <ColumnSelect value={selectedNode.data.column as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { column: val })} placeholder="e.g. created_at" />
                 </div>
                 <div className="flex flex-col gap-2 w-1/3">
                   <label className="text-xs font-semibold text-text-h">Order</label>
@@ -362,7 +531,7 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
               <div className="flex gap-2">
                 <div className="flex flex-col gap-2 w-1/2">
                   <label className="text-xs font-semibold text-text-h">Date Col</label>
-                  <input type="text" value={selectedNode.data.column as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { column: e.target.value })} placeholder="e.g. date" className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text" />
+                  <ColumnSelect value={selectedNode.data.column as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { column: val })} placeholder="e.g. date" />
                 </div>
                 <div className="flex flex-col gap-2 w-1/2">
                   <label className="text-xs font-semibold text-text-h">Truncate To</label>
@@ -380,7 +549,7 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
               <>
                 <div className="flex flex-col gap-2">
                   <label className="text-xs font-semibold text-text-h">Date Column</label>
-                  <input type="text" value={selectedNode.data.column as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { column: e.target.value })} className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text" />
+                  <ColumnSelect value={selectedNode.data.column as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { column: val })} placeholder="Select column" />
                 </div>
                 <div className="flex gap-2 mt-2">
                   <div className="flex flex-col gap-2 w-1/2">
@@ -403,7 +572,22 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
               <>
                 <div className="flex flex-col gap-2">
                   <label className="text-xs font-semibold text-text-h">If Condition</label>
-                  <input type="text" value={selectedNode.data.condition as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { condition: e.target.value })} placeholder="e.g. age > 18" className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text" />
+                  <div className="flex gap-2">
+                    <div className="flex-1">
+                      <ColumnSelect value={selectedNode.data.condCol as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { condCol: val })} placeholder="Column" />
+                    </div>
+                    <select value={selectedNode.data.condOp as string || '='} onChange={(e) => onUpdateNode(selectedNode.id, { condOp: e.target.value })} className="w-16 px-1 py-2 bg-code-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors">
+                      <option value="=">=</option>
+                      <option value="!=">!=</option>
+                      <option value=">">&gt;</option>
+                      <option value="<">&lt;</option>
+                      <option value=">=">&gt;=</option>
+                      <option value="<=">&lt;=</option>
+                    </select>
+                    <div className="flex-1">
+                      <ValueSelect column={selectedNode.data.condCol as string} value={selectedNode.data.condVal as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { condVal: val })} placeholder="Value" />
+                    </div>
+                  </div>
                 </div>
                 <div className="flex gap-2 mt-2">
                   <div className="flex flex-col gap-2 w-1/2">
@@ -422,7 +606,7 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
               <>
                 <div className="flex flex-col gap-2">
                   <label className="text-xs font-semibold text-text-h">Target Column</label>
-                  <input type="text" value={selectedNode.data.column as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { column: e.target.value })} placeholder="e.g. full_name" className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text" />
+                  <ColumnSelect value={selectedNode.data.column as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { column: val })} placeholder="e.g. full_name" />
                 </div>
                 <div className="flex gap-2 mt-2">
                   <div className="flex flex-col gap-2 w-1/2">
@@ -440,7 +624,7 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
             {selectedNode.data.operation === 'stringLength' && (
               <div className="flex flex-col gap-2">
                 <label className="text-xs font-semibold text-text-h">Target Column</label>
-                <input type="text" value={selectedNode.data.column as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { column: e.target.value })} placeholder="e.g. comment" className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text" />
+                <ColumnSelect value={selectedNode.data.column as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { column: val })} placeholder="e.g. comment" />
               </div>
             )}
 
@@ -530,11 +714,11 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
               <>
                 <div className="flex flex-col gap-2">
                   <label className="text-xs font-semibold text-text-h">Partition By Col (Optional)</label>
-                  <input type="text" value={selectedNode.data.partCol as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { partCol: e.target.value })} placeholder="e.g. department" className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text" />
+                  <ColumnSelect value={selectedNode.data.partCol as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { partCol: val })} placeholder="e.g. department" />
                 </div>
                 <div className="flex flex-col gap-2 mt-2">
                   <label className="text-xs font-semibold text-text-h">Order By Col</label>
-                  <input type="text" value={selectedNode.data.orderCol as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { orderCol: e.target.value })} placeholder="e.g. date" className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text" />
+                  <ColumnSelect value={selectedNode.data.orderCol as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { orderCol: val })} placeholder="e.g. date" />
                 </div>
                 <div className="flex gap-2 mt-2">
                   <div className="flex flex-col gap-2 w-1/2">
@@ -547,7 +731,7 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
                   </div>
                   <div className="flex flex-col gap-2 w-1/2">
                     <label className="text-xs font-semibold text-text-h">Target Col</label>
-                    <input type="text" value={selectedNode.data.valCol as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { valCol: e.target.value })} placeholder="e.g. amount" className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text" />
+                    <ColumnSelect value={selectedNode.data.valCol as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { valCol: val })} placeholder="e.g. amount" />
                   </div>
                 </div>
               </>
@@ -557,11 +741,11 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
               <>
                 <div className="flex flex-col gap-2">
                   <label className="text-xs font-semibold text-text-h">Pivot Column (Becomes Columns)</label>
-                  <input type="text" value={selectedNode.data.pivotCol as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { pivotCol: e.target.value })} placeholder="e.g. category" className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text" />
+                  <ColumnSelect value={selectedNode.data.pivotCol as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { pivotCol: val })} placeholder="e.g. category" />
                 </div>
                 <div className="flex flex-col gap-2 mt-2">
                   <label className="text-xs font-semibold text-text-h">Group By Column</label>
-                  <input type="text" value={selectedNode.data.groupCol as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { groupCol: e.target.value })} placeholder="e.g. date" className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text" />
+                  <ColumnSelect value={selectedNode.data.groupCol as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { groupCol: val })} placeholder="e.g. date" />
                 </div>
                 <div className="flex gap-2 mt-2">
                   <div className="flex flex-col gap-2 w-1/3">
@@ -574,7 +758,7 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
                   </div>
                   <div className="flex flex-col gap-2 flex-1">
                     <label className="text-xs font-semibold text-text-h">Value Col</label>
-                    <input type="text" value={selectedNode.data.valCol as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { valCol: e.target.value })} placeholder="e.g. amount" className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text" />
+                    <ColumnSelect value={selectedNode.data.valCol as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { valCol: val })} placeholder="e.g. amount" />
                   </div>
                 </div>
               </>
@@ -584,7 +768,7 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
               <>
                 <div className="flex flex-col gap-2">
                   <label className="text-xs font-semibold text-text-h">Identifier Column (Keep as Rows)</label>
-                  <input type="text" value={selectedNode.data.idCol as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { idCol: e.target.value })} placeholder="e.g. date" className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text" />
+                  <ColumnSelect value={selectedNode.data.idCol as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { idCol: val })} placeholder="e.g. date" />
                 </div>
                 <div className="flex gap-2 mt-2">
                   <div className="flex flex-col gap-2 w-1/2">
@@ -593,7 +777,7 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
                   </div>
                   <div className="flex flex-col gap-2 w-1/2">
                     <label className="text-xs font-semibold text-text-h">Value Col</label>
-                    <input type="text" value={selectedNode.data.valCol as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { valCol: e.target.value })} placeholder="e.g. amount" className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text" />
+                    <ColumnSelect value={selectedNode.data.valCol as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { valCol: val })} placeholder="e.g. amount" />
                   </div>
                 </div>
               </>
@@ -615,7 +799,7 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
                   </div>
                   <div className="flex flex-col gap-2 flex-1">
                     <label className="text-xs font-semibold text-text-h">Value Col</label>
-                    <input type="text" value={selectedNode.data.valCol as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { valCol: e.target.value })} placeholder="e.g. sales" className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text" />
+                    <ColumnSelect value={selectedNode.data.valCol as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { valCol: val })} placeholder="e.g. sales" />
                   </div>
                 </div>
               </>
@@ -638,7 +822,7 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
             {selectedNode.data.operation === 'extractYear' && (
               <div className="flex flex-col gap-2">
                 <label className="text-xs font-semibold text-text-h">Date/Timestamp Column</label>
-                <input type="text" value={selectedNode.data.column as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { column: e.target.value })} placeholder="e.g. created_at" className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text" />
+                <ColumnSelect value={selectedNode.data.column as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { column: val })} placeholder="e.g. created_at" />
               </div>
             )}
 

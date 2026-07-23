@@ -27,6 +27,15 @@ export default function Canvas() {
     const { theme, setTheme } = useTheme();
   const [apiKey, setApiKey] = useState('');
   const [mounted, setMounted] = useState(false);
+  
+  const [toast, setToast] = useState<{message: string, type: 'success' | 'error' | 'warning'} | null>(null);
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+  const [outputFormat, setOutputFormat] = useState('csv');
+  const showToast = (message: string, type: 'success' | 'error' | 'warning' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 4000);
+  };
+  
   useEffect(() => { setMounted(true); setApiKey(localStorage.getItem('GEMINI_API_KEY') || ''); }, []);
 
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({
@@ -155,7 +164,28 @@ export default function Canvas() {
   };
 
   const handleRunPipeline = async () => {
+    // Phase 1: Foolproof Validation
+    if (nodes.length === 0) {
+      showToast("Canvas is empty! Drag some nodes to begin.", "warning");
+      return;
+    }
+
+    const unconfiguredNodes = nodes.filter(n => 
+      ['csvInput', 'jsonInput', 'parquetInput'].includes(n.data.operation as string) && !n.data.file
+    );
+
+    if (unconfiguredNodes.length > 0) {
+      const nodeStatuses = unconfiguredNodes.reduce((acc: any, node) => {
+        acc[node.id] = { status: 'ERROR', error: 'Missing file configuration' };
+        return acc;
+      }, {});
+      setNodeStatuses(nodeStatuses);
+      showToast(`Missing configuration in ${unconfiguredNodes.length} node(s)!`, "error");
+      return;
+    }
+
     try {
+      showToast("Executing pipeline...", "success");
       const mappedNodes = nodes.map(node => {
         let generatedSql = node.data.sql as string || "";
         const op = node.data.operation;
@@ -166,34 +196,25 @@ export default function Canvas() {
 
         switch (op) {
           case 'csvInput': 
+          case 'excelInput':
             const csvFile = String(node.data.file || '');
-            if (csvFile.startsWith('[')) {
-              const files = JSON.parse(csvFile);
-              if (files.length > 0 && (files[0].toLowerCase().endsWith('.xlsx') || files[0].toLowerCase().endsWith('.xls'))) {
-                generatedSql = `__EXCEL_MULTI__ ${csvFile}`;
-              } else {
-                generatedSql = `SELECT * FROM read_csv_auto(${csvFile})`;
-              }
-            } else {
-              if (csvFile.toLowerCase().endsWith('.xlsx') || csvFile.toLowerCase().endsWith('.xls')) {
-                generatedSql = `__EXCEL__ '${csvFile}'`;
-              } else {
-                generatedSql = `SELECT * FROM read_csv_auto('${csvFile}')`;
-              }
-            }
+            let csvArg = `'${csvFile}'`;
+            try { const parsed = JSON.parse(csvFile); if(Array.isArray(parsed)) csvArg = `[${parsed.map(p=>`'${p}'`).join(',')}]`; } catch(e){}
+            generatedSql = `SELECT * FROM read_csv_auto(${csvArg})`;
             break;
           case 'jsonInput': 
             const jFile = String(node.data.file || '');
-            generatedSql = `SELECT * FROM read_json_auto(${jFile.startsWith('[') ? jFile : `'${jFile}'`})`; 
+            let jArg = `'${jFile}'`;
+            try { const parsed = JSON.parse(jFile); if(Array.isArray(parsed)) jArg = `[${parsed.map(p=>`'${p}'`).join(',')}]`; } catch(e){}
+            generatedSql = `SELECT * FROM read_json_auto(${jArg})`; 
             break;
           case 'parquetInput': 
             const pFile = String(node.data.file || '');
-            generatedSql = `SELECT * FROM read_parquet(${pFile.startsWith('[') ? pFile : `'${pFile}'`})`; 
+            let pArg = `'${pFile}'`;
+            try { const parsed = JSON.parse(pFile); if(Array.isArray(parsed)) pArg = `[${parsed.map(p=>`'${p}'`).join(',')}]`; } catch(e){}
+            generatedSql = `SELECT * FROM read_parquet(${pArg})`; 
             break;
-          case 'excelInput': 
-            const eFile = String(node.data.file || '');
-            generatedSql = eFile.startsWith('[') ? `__EXCEL_MULTI__ ${eFile}` : `__EXCEL__ '${eFile}'`; 
-            break;
+
           case 'postgresInput': generatedSql = `SELECT * FROM postgres_scan('${node.data.connection_string || ''}', '${node.data.table || ''}')`; break;
           
           case 'removeDuplicates': generatedSql = `SELECT DISTINCT * FROM ${parent1}`; break;
@@ -202,18 +223,36 @@ export default function Canvas() {
           case 'typeConversion': generatedSql = `SELECT *, CAST(${node.data.column || 'id'} AS ${node.data.targetType || 'INTEGER'}) AS ${node.data.newCol || 'cast_val'} FROM ${parent1}`; break;
           case 'trimWhitespace': generatedSql = `SELECT *, TRIM(${node.data.column || 'id'}) AS ${node.data.newCol || 'trimmed'} FROM ${parent1}`; break;
           case 'textCasing': generatedSql = `SELECT *, ${node.data.casing || 'UPPER'}(${node.data.column || 'id'}) AS ${node.data.newCol || 'cased_val'} FROM ${parent1}`; break;
-          case 'replaceText': generatedSql = `SELECT *, REPLACE(${node.data.column || 'id'}, '${node.data.oldText || ''}', '${node.data.newText || ''}') AS ${node.data.newCol || 'replaced'} FROM ${parent1}`; break;
+          case 'replaceText': {
+            const rCol = node.data.column ? `"${node.data.column}"` : 'id';
+            const rOld = node.data.oldText ? String(node.data.oldText).replace(/'/g, "''") : '';
+            const rNew = node.data.newText ? String(node.data.newText).replace(/'/g, "''") : '';
+            generatedSql = `SELECT *, REPLACE(${rCol}, '${rOld}', '${rNew}') AS ${node.data.newCol || 'replaced'} FROM ${parent1}`; 
+            break;
+          }
           case 'regexExtract': generatedSql = `SELECT *, REGEXP_EXTRACT(${node.data.column || 'id'}, '${node.data.pattern || '.*'}') AS ${node.data.newCol || 'regex_val'} FROM ${parent1}`; break;
           case 'dropColumns': generatedSql = `SELECT * EXCLUDE (${node.data.columns || 'id'}) FROM ${parent1}`; break;
           case 'renameColumn': generatedSql = `SELECT * RENAME (${node.data.oldCol || 'old'} AS ${node.data.newCol || 'new'}) FROM ${parent1}`; break;
           
-          case 'filterRows': generatedSql = `SELECT * FROM ${parent1} WHERE ${node.data.condition || '1=1'}`; break;
+          case 'filterRows': {
+            const fCol = node.data.filterCol ? `"${node.data.filterCol}"` : '1';
+            const fOp = node.data.filterOp || '=';
+            const fVal = node.data.filterVal ? `'${String(node.data.filterVal).replace(/'/g, "''")}'` : '1';
+            generatedSql = `SELECT * FROM ${parent1} WHERE ${fCol} ${fOp} ${fVal}`; 
+            break;
+          }
           case 'sortRows': generatedSql = `SELECT * FROM ${parent1} ORDER BY ${node.data.column || 'id'} ${node.data.direction || 'ASC'}`; break;
           case 'topN': generatedSql = `SELECT * FROM ${parent1} LIMIT ${node.data.limit || '10'}`; break;
           case 'sampleRows': generatedSql = `SELECT * FROM ${parent1} USING SAMPLE ${node.data.percent || '10'}%`; break;
           case 'dateTruncate': generatedSql = `SELECT *, DATE_TRUNC('${node.data.part || 'month'}', CAST(${node.data.column || 'date_col'} AS TIMESTAMP)) AS ${node.data.newCol || 'trunc_date'} FROM ${parent1}`; break;
           case 'dateArithmetic': generatedSql = `SELECT *, CAST(${node.data.column || 'date_col'} AS TIMESTAMP) + INTERVAL ${node.data.amount || '1'} ${node.data.interval || 'DAY'} AS ${node.data.newCol || 'new_date'} FROM ${parent1}`; break;
-          case 'conditionalLogic': generatedSql = `SELECT *, CASE WHEN ${node.data.condition || '1=1'} THEN '${node.data.trueVal || 'Yes'}' ELSE '${node.data.falseVal || 'No'}' END AS ${node.data.newCol || 'case_val'} FROM ${parent1}`; break;
+          case 'conditionalLogic': {
+            const cCol = node.data.condCol ? `"${node.data.condCol}"` : '1';
+            const cOp = node.data.condOp || '=';
+            const cVal = node.data.condVal ? `'${String(node.data.condVal).replace(/'/g, "''")}'` : '1';
+            generatedSql = `SELECT *, CASE WHEN ${cCol} ${cOp} ${cVal} THEN '${node.data.trueVal || 'Yes'}' ELSE '${node.data.falseVal || 'No'}' END AS ${node.data.newCol || 'case_val'} FROM ${parent1}`; 
+            break;
+          }
           case 'splitPart': generatedSql = `SELECT *, str_split(${node.data.column || 'id'}, '${node.data.delim || ','}')[${node.data.index || '1'}] AS ${node.data.newCol || 'split_val'} FROM ${parent1}`; break;
           case 'stringLength': generatedSql = `SELECT *, LENGTH(${node.data.column || 'id'}) AS ${node.data.newCol || 'len'} FROM ${parent1}`; break;
           
@@ -264,7 +303,7 @@ export default function Canvas() {
         target: edge.target
       }));
 
-      const payload = { nodes: mappedNodes, edges: mappedEdges };
+      const payload = { nodes: mappedNodes, edges: mappedEdges, output_format: outputFormat };
       const response = await axios.post('/api/run', payload);
       
       const { data } = response;
@@ -277,19 +316,16 @@ export default function Canvas() {
       }
       setActiveTab('preview'); 
       
-      setTimeout(() => {
-        if (window.confirm("Pipeline executed successfully! Do you want to download the full result as a CSV?")) {
-          const match = data.final_sql.match(/FROM (node_[a-zA-Z0-9_-]+)/);
-          if (match && match[1]) {
-            window.location.href = `http://localhost:8000/api/download/${match[1]}`;
-          }
-        }
-      }, 100);
+      if (data.download_url) {
+        setDownloadUrl(data.download_url);
+        showToast("Pipeline executed successfully!", "success");
+      }
 
     } catch (error: any) {
       console.error(error);
-      const msg = error.response?.data?.detail || error.message;
+      const msg = error.response?.data?.error || error.response?.data?.detail || error.message;
       setExecutionLogs([`[CRITICAL] Execution Failed: ${msg}`]);
+      showToast(`Pipeline failed: ${msg}`, 'error');
       
       if (error.response?.data?.node_statuses) {
         setNodeStatuses(error.response.data.node_statuses);
@@ -389,6 +425,7 @@ export default function Canvas() {
                   <div onDragStart={(e) => onDragStart(e, 'dataSource', 'jsonInput')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">JSON Input</div>
                   <div onDragStart={(e) => onDragStart(e, 'dataSource', 'parquetInput')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Parquet Input</div>
                   <div onDragStart={(e) => onDragStart(e, 'dataSource', 'excelInput')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Excel Input</div>
+
                   <div onDragStart={(e) => onDragStart(e, 'dataSource', 'postgresInput')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">PostgreSQL (Mock)</div>
                 </div>
               )}
@@ -504,6 +541,13 @@ export default function Canvas() {
               maskColor="var(--social-bg)" 
               className="bg-bg border border-border rounded-lg shadow-shadow" 
             />
+            {nodes.length === 0 && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10">
+                <div className="text-4xl mb-4 opacity-20">🪄</div>
+                <h3 className="text-xl font-bold text-text-muted opacity-50">Canvas is empty</h3>
+                <p className="text-sm text-text-muted opacity-40 mt-2">Drag a node from the sidebar or press Cmd+K to start building.</p>
+              </div>
+            )}
           </ReactFlow>
         </main>
 
@@ -511,6 +555,8 @@ export default function Canvas() {
         <PropertiesPanel 
           selectedNode={selectedNode}
           onUpdateNode={updateNodeData}
+          nodes={nodes}
+          edges={edges}
         />
       </div>
 
@@ -562,10 +608,27 @@ export default function Canvas() {
           {activeTab === 'preview' && (
              <div className="p-4 h-full flex flex-col gap-2">
                 {pipelineMetadata && (
-                  <div className="flex gap-4 p-2 bg-bg border border-border rounded-md text-xs font-mono text-text mb-2">
+                  <div className="flex gap-4 p-2 bg-code-bg text-xs border-b border-border items-center">
                     <span className="text-accent font-bold">PROFILING</span>
                     <span>Rows: {pipelineMetadata.row_count}</span>
                     <span>Columns: {pipelineMetadata.column_count}</span>
+                    {downloadUrl && (
+                      <div className="ml-auto flex items-center gap-2">
+                        <select 
+                          value={outputFormat} 
+                          onChange={(e) => setOutputFormat(e.target.value)}
+                          className="px-2 py-1 bg-bg border border-border rounded-md text-xs text-text focus:outline-none focus:border-accent"
+                        >
+                          <option value="csv">CSV</option>
+                          <option value="parquet">Parquet</option>
+                          <option value="json">JSON</option>
+                        </select>
+                        <a href={downloadUrl} className="px-3 py-1 bg-accent text-white rounded-md text-xs font-medium hover-lift transition-colors flex items-center gap-2">
+                          <FolderOutput className="w-3 h-3" />
+                          Download
+                        </a>
+                      </div>
+                    )}
                   </div>
                 )}
                 <div className="flex-1 overflow-auto">
@@ -615,6 +678,15 @@ export default function Canvas() {
           )}
         </div>
       </footer>
+      {toast && (
+        <div className={`fixed bottom-4 right-4 px-4 py-3 rounded-lg shadow-lg text-sm font-medium z-50 flex items-center gap-2 transition-all duration-300 ${
+          toast.type === 'error' ? 'bg-red-500 text-white' :
+          toast.type === 'warning' ? 'bg-orange-500 text-white' :
+          'bg-accent text-white'
+        }`}>
+          <span>{toast.message}</span>
+        </div>
+      )}
     </div>
   );
 }

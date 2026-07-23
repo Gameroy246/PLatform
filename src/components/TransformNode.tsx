@@ -10,6 +10,7 @@ export default function TransformNode({ data }: { data: any }) {
     <div className={`px-4 py-3 min-w-[180px] rounded-md bg-code-bg border-l-4 ${isCleaning ? 'border-l-orange-400' : isAgg ? 'border-l-purple-400' : 'border-l-green-400'} border-y border-r border-border shadow-sm hover:shadow-md transition-shadow relative`}>
       {/* Input Connection Handle (Left) */}
       <Handle 
+        id="target"
         type="target" 
         position={Position.Left} 
         className="w-2 h-4 rounded-none bg-border border-0 -ml-1" 
@@ -28,6 +29,7 @@ export default function TransformNode({ data }: { data: any }) {
 
       {/* Output Connection Handle (Right) */}
       <Handle 
+        id="source"
         type="source" 
         position={Position.Right} 
         className="w-2 h-4 rounded-none bg-accent border-0 -mr-1" 
