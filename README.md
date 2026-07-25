@@ -1,4 +1,4 @@
-# Data Architect 🏗️
+# Data Architect(In Progress)
 
 A local-first, visual SQL pipeline builder powered by **DuckDB** and **Next.js**. 
 
