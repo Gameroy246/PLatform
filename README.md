@@ -4,7 +4,7 @@ A local-first, visual SQL pipeline builder powered by **DuckDB** and **Next.js**
 
 I built Data Architect to solve a simple problem: I hate writing boilerplate SQL for basic data transformations, but I also hate uploading my sensitive datasets to cloud SaaS platforms. This tool gives you the power of a modern data engineering pipeline (joins, aggregations, type casting, filtering) entirely in your browser, running locally on your own machine.
 
-## ✨ Features
+## Features
 
 - **Blazing Fast Local Execution:** Runs entirely on your local machine using the native Node DuckDB engine. No cloud servers, no data privacy issues. It safely processes massive datasets by leveraging DuckDB's disk-spilling architecture within a 512MB RAM constraint.
 - **Visual Node DAG:** Drag-and-drop interface powered by React Flow. Visually connect Data Sources to Transformations and watch your data flow.
@@ -14,7 +14,7 @@ I built Data Architect to solve a simple problem: I hate writing boilerplate SQL
 - **Multi-File Arrays:** Upload 10 CSVs into a single node. The engine automatically handles array syntax (`read_csv_auto(['a.csv', 'b.csv'])`) to seamlessly union your data.
 - **Format Exporter:** Export your final pipeline results to **CSV**, **JSON**, or **Parquet** on the fly.
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 - Node.js 18+
@@ -40,7 +40,7 @@ npm run dev
 
 4. Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-## 🧠 Architecture Overview
+## Architecture Overview
 
 The system operates in a stateless, reactive loop:
 1. **The Canvas (`React Flow`)** manages the Directed Acyclic Graph (DAG) state.
@@ -48,7 +48,7 @@ The system operates in a stateless, reactive loop:
 3. **The Value Engine (`/api/values`)** runs `SELECT DISTINCT` on upstream nodes to populate filter dropdowns with actual data.
 4. **The Execution Engine (`/api/run`)** compiles the final graph into nested `CREATE TEMP TABLE` DuckDB statements and executes them sequentially.
 
-## 🛠️ Built With
+## Built With
 
 - [Next.js](https://nextjs.org/) (App Router)
 - [DuckDB](https://duckdb.org/) (Node.js API)
@@ -57,8 +57,8 @@ The system operates in a stateless, reactive loop:
 - [Tailwind CSS](https://tailwindcss.com/) (Styling)
 - [XLSX](https://sheetjs.com/) (Excel conversion)
 
-## 🤝 Contributing
-Feel free to open issues or submit pull requests. If you want to add a new Transformation Node, check out the `generateSQL` function inside `Canvas.tsx` to see how the queries are compiled.
+## Contributing
+Feel free to open issues or submit pull requests. If you want to add a new Transformation Node, check out the `generateSQL` function inside `Canvas.tsx` to see how the queries are compiled. Feel free to report any bugs
 
-## 📝 License
+## License
 This project is licensed under the MIT License - see the LICENSE file for details.
