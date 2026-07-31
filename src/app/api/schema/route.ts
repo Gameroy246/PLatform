@@ -48,6 +48,10 @@ export async function POST(req: Request) {
       });
     }
 
+    if (sortedNodes.length !== nodes.length) {
+      return NextResponse.json({ error: "Invalid Pipeline: Circular dependency detected." }, { status: 400 });
+    }
+
     // Get parents of targetNodeId
     const parents = (edges || []).filter((e: any) => e.target === targetNodeId).map((e: any) => e.source);
     if (parents.length === 0) {
@@ -77,41 +81,64 @@ export async function POST(req: Request) {
     }
 
     // Execute only the required upstream DAG sequentially
+    let allTempFiles: string[] = [];
     for (const nodeId of sortedNodes) {
       if (!upstreamNodes.has(nodeId)) continue;
       
       const sql = nodeMap[nodeId];
       if (!sql || sql === "SELECT 'Disconnected' AS status") continue;
       
+      const { decryptSqlPaths } = await import('@/lib/decryptSqlPaths');
+      const { modifiedSql, tempFiles } = decryptSqlPaths(sql);
+      allTempFiles.push(...tempFiles);
+      
       const safeNodeName = `node_${nodeId.replace(/-/g, '_')}`;
-      const createTableSql = `CREATE TEMP TABLE ${safeNodeName} AS (${sql})`;
+      const sqlParts = modifiedSql.split('___LDA_DATA_QUALITY_SPLIT___');
       
       await new Promise<void>((resolve, reject) => {
-        conn.exec(createTableSql, (err: any) => {
+        conn.exec(`CREATE TEMP TABLE ${safeNodeName} AS (${sqlParts[0]})`, (err: any) => {
           if (err) reject(new Error(`Schema Error at Node ${nodeId}: ${err.message}`));
           else resolve();
         });
       });
+
+      if (sqlParts.length > 1) {
+        await new Promise<void>((resolve, reject) => {
+          conn.exec(`CREATE TEMP TABLE ${safeNodeName}_error AS (${sqlParts[1]})`, (err: any) => {
+            if (err) reject(new Error(`Schema Error at Node ${nodeId} (Error): ${err.message}`));
+            else resolve();
+          });
+        });
+      }
     }
 
     // Fetch schema for all parents and combine
     let combinedSchema: {name: string, type: string}[] = [];
     for (const parentId of parents) {
-      const parentSafeName = `node_${parentId.replace(/-/g, '_')}`;
-      const result = await new Promise<any[]>((resolve, reject) => {
-        conn.all(`DESCRIBE (SELECT * FROM ${parentSafeName})`, (err: any, res: any) => {
-          if (err) resolve([]); // if parent failed or is incomplete, just ignore
+      // Find the edge that connects parent to the target to see if it's the error stream
+      const edgeToTarget = (edges || []).find((e: any) => e.source === parentId && e.target === targetNodeId);
+      const isErrorStream = edgeToTarget?.sourceHandle === 'error';
+
+      const parentSafeName = `node_${parentId.replace(/-/g, '_')}${isErrorStream ? '_error' : ''}`;
+      
+      const schema = await new Promise<any[]>((resolve, reject) => {
+        conn.all(`DESCRIBE ${parentSafeName}`, (err: any, res: any) => {
+          if (err) reject(err);
           else resolve(res);
         });
       });
-      combinedSchema = [...combinedSchema, ...result.map(col => ({ name: col.column_name, type: col.column_type }))];
+      combinedSchema = [...combinedSchema, ...schema.map(col => ({ name: col.column_name, type: col.column_type }))];
     }
     
-    // Deduplicate schema columns
-    const uniqueSchema = Array.from(new Map(combinedSchema.map(item => [item.name, item])).values());
+    // Deduplicate
+    const uniqueSchema = combinedSchema.filter((v, i, a) => a.findIndex(t => (t.name === v.name)) === i);
 
-    // Clean up
     conn.close();
+    
+    try {
+      const { cleanupTempFiles } = await import('@/lib/decryptSqlPaths');
+      cleanupTempFiles(allTempFiles);
+    } catch(e) {}
     
     return NextResponse.json({ 
       success: true, 
@@ -119,6 +146,7 @@ export async function POST(req: Request) {
     });
 
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || "Failed to extract schema." }, { status: 500 });
+    console.error("Schema API Error:", error);
+    return NextResponse.json({ error: error.message || "Failed to generate schema." }, { status: 500 });
   }
 }

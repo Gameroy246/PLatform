@@ -1,19 +1,17 @@
 import { NextResponse } from "next/server";
 import duckdb from "duckdb";
+import fs from "fs";
 
 export async function POST(req: Request) {
   let allTempFiles: string[] = [];
   try {
-    const { nodes, edges, targetNodeId, targetColumn } = await req.json();
-    if (!nodes || !Array.isArray(nodes) || !targetNodeId || !targetColumn) {
+    const { nodes, edges, targetNodeId } = await req.json();
+    if (!nodes || !Array.isArray(nodes) || !targetNodeId) {
       return NextResponse.json({ error: "Invalid payload." }, { status: 400 });
     }
 
-    const db = new duckdb.Database(':memory:', {
-      "allow_unsigned_extensions": "false"
-    });
+    const db = new duckdb.Database(':memory:', { "allow_unsigned_extensions": "false" });
     const conn = db.connect();
-
     conn.exec("PRAGMA memory_limit='384MB'");
     conn.exec("PRAGMA threads=1");
 
@@ -24,7 +22,8 @@ export async function POST(req: Request) {
     nodes.forEach((n: any) => {
       inDegree[n.id] = 0;
       adjList[n.id] = [];
-      nodeMap[n.id] = n.sql;
+      let sql = n.sql;
+      nodeMap[n.id] = sql;
     });
 
     edges?.forEach((e: any) => {
@@ -53,19 +52,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid Pipeline: Circular dependency detected." }, { status: 400 });
     }
 
-    // Get parent of targetNodeId (we assume column values come from the first parent)
-    const parents = (edges || []).filter((e: any) => e.target === targetNodeId);
-    if (parents.length === 0) {
-      return NextResponse.json({ success: true, values: [] });
-    }
-
-    const parentId = parents[0].source;
-    const isErrorStream = parents[0].sourceHandle === 'error';
-
+    const stack = [targetNodeId];
     const upstreamNodes = new Set<string>();
-    const stack = [parentId];
-    upstreamNodes.add(parentId);
+    upstreamNodes.add(targetNodeId);
     
+    // Reverse adjacency list for upstream traversal
     const revAdjList: Record<string, string[]> = {};
     edges?.forEach((e: any) => {
       if (!revAdjList[e.target]) revAdjList[e.target] = [];
@@ -82,41 +73,53 @@ export async function POST(req: Request) {
       });
     }
 
+    const nodeHashes: Record<string, string> = {};
+
     for (const nodeId of sortedNodes) {
       if (!upstreamNodes.has(nodeId)) continue;
       
       const sql = nodeMap[nodeId];
       if (!sql || sql === "SELECT 'Disconnected' AS status") continue;
       
-      const { decryptSqlPaths } = await import('@/lib/decryptSqlPaths');
-      const { modifiedSql, tempFiles } = decryptSqlPaths(sql);
-      allTempFiles.push(...tempFiles);
+      const { generateNodeHash, getCacheFilePath, isEncryptedCached, getEncryptedCacheFilePath } = await import('@/lib/cachingEngine');
+      const { encryptFile, decryptFile } = await import('@/lib/encryption');
       
-      const safeNodeName = `node_${nodeId.replace(/-/g, '_')}`;
-      const sqlParts = modifiedSql.split('___LDA_DATA_QUALITY_SPLIT___');
-      
-      await new Promise<void>((resolve, reject) => {
-        conn.exec(`CREATE TEMP TABLE ${safeNodeName} AS (${sqlParts[0]})`, (err: any) => {
-          if (err) reject(new Error(`Values API Error at Node ${nodeId}: ${err.message}`));
-          else resolve();
-        });
-      });
+      const parentHashes = (revAdjList[nodeId] || []).map(p => nodeHashes[p]);
+      const nodeHash = generateNodeHash(sql, parentHashes);
+      nodeHashes[nodeId] = nodeHash;
 
-      if (sqlParts.length > 1) {
+      const safeNodeName = `node_${nodeId.replace(/-/g, '_')}`;
+      
+      if (isEncryptedCached(nodeHash)) {
+        const encCachePath = getEncryptedCacheFilePath(nodeHash);
+        const tempCachePath = getCacheFilePath(nodeHash + "_temp.parquet");
+        decryptFile(encCachePath, tempCachePath);
+        allTempFiles.push(tempCachePath);
+        
         await new Promise<void>((resolve, reject) => {
-          conn.exec(`CREATE TEMP TABLE ${safeNodeName}_error AS (${sqlParts[1]})`, (err: any) => {
-            if (err) reject(new Error(`Values API Error at Node ${nodeId} (Error): ${err.message}`));
-            else resolve();
+          conn.exec(`CREATE TEMP TABLE ${safeNodeName} AS SELECT * FROM read_parquet('${tempCachePath.replace(/\\/g, '/')}')`, (err: any) => {
+            if (err) reject(err); else resolve();
+          });
+        });
+      } else {
+        const { decryptSqlPaths } = await import('@/lib/decryptSqlPaths');
+        const { modifiedSql, tempFiles } = decryptSqlPaths(sql);
+        allTempFiles.push(...tempFiles);
+        const sqlParts = modifiedSql.split('___LDA_DATA_QUALITY_SPLIT___');
+        
+        await new Promise<void>((resolve, reject) => {
+          conn.exec(`CREATE TEMP TABLE ${safeNodeName} AS (${sqlParts[0]})`, (err: any) => {
+            if (err) reject(err); else resolve();
           });
         });
       }
     }
 
-    const parentSafeName = `node_${parentId.replace(/-/g, '_')}${isErrorStream ? '_error' : ''}`;
+    const targetSafeName = `node_${targetNodeId.replace(/-/g, '_')}`;
     
-    // Fetch top 100 distinct values
-    const distinctValues = await new Promise<any[]>((resolve, reject) => {
-      conn.all(`SELECT DISTINCT "${targetColumn}" AS val FROM ${parentSafeName} WHERE "${targetColumn}" IS NOT NULL LIMIT 100`, (err: any, res: any) => {
+    // DuckDB SUMMARIZE command provides min, max, approx_unique, null_percentage, etc.
+    const result = await new Promise<any[]>((resolve, reject) => {
+      conn.all(`SUMMARIZE ${targetSafeName}`, (err: any, res: any) => {
         if (err) reject(err);
         else resolve(res);
       });
@@ -131,7 +134,7 @@ export async function POST(req: Request) {
     
     return NextResponse.json({ 
       success: true, 
-      values: distinctValues.map(r => r.val)
+      profile: result
     });
 
   } catch (error: any) {
@@ -139,7 +142,7 @@ export async function POST(req: Request) {
       const { cleanupTempFiles } = await import('@/lib/decryptSqlPaths');
       cleanupTempFiles(allTempFiles);
     } catch(e) {}
-    console.error("Values API Error:", error);
-    return NextResponse.json({ error: error.message || "Failed to fetch values." }, { status: 500 });
+    console.error("Profile API Error:", error);
+    return NextResponse.json({ error: error.message || "Failed to generate profile." }, { status: 500 });
   }
 }

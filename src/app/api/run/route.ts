@@ -8,6 +8,7 @@ import os from "os";
 const WORKSPACE_DIR = path.join(os.tmpdir(), "LocalDataArchitect_Workspace");
 
 export async function POST(req: Request) {
+  let allTempFiles: string[] = [];
   try {
     // Ensure workspace exists to prevent config crash
     if (!fs.existsSync(WORKSPACE_DIR)) {
@@ -69,27 +70,105 @@ export async function POST(req: Request) {
       });
     }
 
+    if (sortedNodes.length !== nodes.length) {
+      return NextResponse.json({ error: "Invalid Pipeline: Circular dependency detected. Nodes cannot form a closed loop." }, { status: 400 });
+    }
+
+    // Reverse adjacency list for easy upstream traversal (used for caching)
+    const revAdjList: Record<string, string[]> = {};
+    edges?.forEach((e: any) => {
+      if (!revAdjList[e.target]) revAdjList[e.target] = [];
+      revAdjList[e.target].push(e.source);
+    });
+
+    const nodeHashes: Record<string, string> = {};
+
     // Step 2: Execute the DAG sequentially in topological order
     for (const nodeId of sortedNodes) {
       finalNodeId = nodeId;
       const sql = nodeMap[nodeId];
       if (!sql || sql === "SELECT 'Disconnected' AS status") continue;
       
+      const { generateNodeHash, getCacheFilePath, isEncryptedCached, getEncryptedCacheFilePath } = await import('@/lib/cachingEngine');
+      const { encryptFile, decryptFile } = await import('@/lib/encryption');
+      
+      const parentHashes = (revAdjList[nodeId] || []).map(p => nodeHashes[p]);
+      const nodeHash = generateNodeHash(sql, parentHashes);
+      nodeHashes[nodeId] = nodeHash;
+
       const safeNodeName = `node_${nodeId.replace(/-/g, '_')}`;
-      const createTableSql = `CREATE TEMP TABLE ${safeNodeName} AS (${sql})`;
       
-      logs.push(`[${new Date().toISOString()}] Executing: ${createTableSql}`);
-      
-      await new Promise<void>((resolve, reject) => {
-        conn.exec(createTableSql, (err: any) => {
-          if (err) {
-            logs.push(`[ERROR] Failed at Node ${nodeId}: ${err.message}`);
-            reject(new Error(`Failed at Node ${nodeId}: ${err.message}`));
-          } else {
-            resolve();
-          }
+      if (isEncryptedCached(nodeHash)) {
+        logs.push(`[${new Date().toISOString()}] Cache Hit for Node ${nodeId}. Loading from Vault...`);
+        const encCachePath = getEncryptedCacheFilePath(nodeHash);
+        const tempCachePath = getCacheFilePath(nodeHash + "_temp.parquet");
+        decryptFile(encCachePath, tempCachePath);
+        allTempFiles.push(tempCachePath);
+        
+        await new Promise<void>((resolve, reject) => {
+          conn.exec(`CREATE TEMP TABLE ${safeNodeName} AS SELECT * FROM read_parquet('${tempCachePath.replace(/\\/g, '/')}')`, (err: any) => {
+            if (err) reject(err); else resolve();
+          });
         });
-      });
+
+        // Load error cache if exists
+        const encErrorCachePath = getEncryptedCacheFilePath(nodeHash + "_error");
+        if (fs.existsSync(encErrorCachePath)) {
+           const tempErrorCachePath = getCacheFilePath(nodeHash + "_error_temp.parquet");
+           decryptFile(encErrorCachePath, tempErrorCachePath);
+           allTempFiles.push(tempErrorCachePath);
+           await new Promise<void>((resolve, reject) => {
+             conn.exec(`CREATE TEMP TABLE ${safeNodeName}_error AS SELECT * FROM read_parquet('${tempErrorCachePath.replace(/\\/g, '/')}')`, (err: any) => {
+               if (err) reject(err); else resolve();
+             });
+           });
+        }
+
+      } else {
+        const { decryptSqlPaths } = await import('@/lib/decryptSqlPaths');
+        const { modifiedSql, tempFiles } = decryptSqlPaths(sql);
+        allTempFiles.push(...tempFiles);
+        
+        const sqlParts = modifiedSql.split('___LDA_DATA_QUALITY_SPLIT___');
+        
+        logs.push(`[${new Date().toISOString()}] Executing: CREATE TEMP TABLE ${safeNodeName} AS (...)`);
+        await new Promise<void>((resolve, reject) => {
+          conn.exec(`CREATE TEMP TABLE ${safeNodeName} AS (${sqlParts[0]})`, (err: any) => {
+            if (err) reject(new Error(`Failed at Node ${nodeId}: ${err.message}`)); else resolve();
+          });
+        });
+
+        if (sqlParts.length > 1) {
+          logs.push(`[${new Date().toISOString()}] Executing: CREATE TEMP TABLE ${safeNodeName}_error AS (...)`);
+          await new Promise<void>((resolve, reject) => {
+            conn.exec(`CREATE TEMP TABLE ${safeNodeName}_error AS (${sqlParts[1]})`, (err: any) => {
+              if (err) reject(new Error(`Failed at Error Stream ${nodeId}: ${err.message}`)); else resolve();
+            });
+          });
+        }
+
+        // Save Cache
+        const rawCachePath = getCacheFilePath(nodeHash);
+        await new Promise<void>((resolve, reject) => {
+            conn.exec(`COPY (SELECT * FROM ${safeNodeName}) TO '${rawCachePath.replace(/\\/g, '/')}' (FORMAT PARQUET)`, (err: any) => {
+                if (err) reject(err); else resolve();
+            });
+        });
+        encryptFile(rawCachePath, getEncryptedCacheFilePath(nodeHash));
+        fs.unlinkSync(rawCachePath);
+
+        // Save Error Cache if exists
+        if (sqlParts.length > 1) {
+          const rawErrorCachePath = getCacheFilePath(nodeHash + "_error");
+          await new Promise<void>((resolve, reject) => {
+              conn.exec(`COPY (SELECT * FROM ${safeNodeName}_error) TO '${rawErrorCachePath.replace(/\\/g, '/')}' (FORMAT PARQUET)`, (err: any) => {
+                  if (err) reject(err); else resolve();
+              });
+          });
+          encryptFile(rawErrorCachePath, getEncryptedCacheFilePath(nodeHash + "_error"));
+          fs.unlinkSync(rawErrorCachePath);
+        }
+      }
     }
 
     if (!finalNodeId) {
@@ -136,5 +215,10 @@ export async function POST(req: Request) {
   } catch (error: any) {
     console.error("API Error:", error);
     return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
+  } finally {
+    try {
+      const { cleanupTempFiles } = await import('@/lib/decryptSqlPaths');
+      cleanupTempFiles(allTempFiles);
+    } catch(e) {}
   }
 }

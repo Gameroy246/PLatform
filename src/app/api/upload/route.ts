@@ -26,25 +26,27 @@ export async function POST(req: Request) {
     const uniqueFilename = `${Date.now()}-${safeName}`;
     const destinationPath = path.join(WORKSPACE_DIR, uniqueFilename);
     
-    let finalPath = destinationPath;
+    const ext = path.extname(file.name).toLowerCase();
+    const finalExt = ext === ".xlsx" || ext === ".xls" ? ".csv" : ext;
+    const finalPath = destinationPath.replace(/\.[^/.]+$/, "") + finalExt + ".enc";
     let headers: string[] = [];
 
-    const ext = path.extname(file.name).toLowerCase();
-
     if (ext === ".xlsx" || ext === ".xls") {
-      // Safely convert Excel to CSV on the fly to prevent DuckDB memory crashes
       const workbook = xlsx.read(buffer, { type: "buffer" });
       const sheetName = workbook.SheetNames[0];
       const sheet = workbook.Sheets[sheetName];
       const csvData = xlsx.utils.sheet_to_csv(sheet);
       
-      finalPath = destinationPath.replace(/\.xlsx?$/i, ".csv");
-      fs.writeFileSync(finalPath, csvData);
+      const { encryptBuffer } = await import('@/lib/encryption');
+      const encrypted = encryptBuffer(Buffer.from(csvData, 'utf-8'));
+      fs.writeFileSync(finalPath, encrypted);
       
       const firstLine = csvData.split('\n')[0] || '';
       headers = firstLine.split(',').map(h => h.trim());
     } else {
-      fs.writeFileSync(destinationPath, buffer);
+      const { encryptBuffer } = await import('@/lib/encryption');
+      const encrypted = encryptBuffer(buffer);
+      fs.writeFileSync(finalPath, encrypted);
       
       if (ext === ".csv") {
         const firstLine = buffer.toString('utf-8').split('\n')[0] || '';
@@ -56,7 +58,7 @@ export async function POST(req: Request) {
       success: true, 
       path: finalPath,
       headers: headers,
-      message: ext === ".xlsx" ? "Excel file securely converted to CSV format." : "File uploaded securely to workspace."
+      message: "File securely encrypted with AES-256-GCM and saved."
     });
 
   } catch (error: any) {

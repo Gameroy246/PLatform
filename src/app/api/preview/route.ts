@@ -2,10 +2,9 @@ import { NextResponse } from "next/server";
 import duckdb from "duckdb";
 
 export async function POST(req: Request) {
-  let allTempFiles: string[] = [];
   try {
-    const { nodes, edges, targetNodeId, targetColumn } = await req.json();
-    if (!nodes || !Array.isArray(nodes) || !targetNodeId || !targetColumn) {
+    const { nodes, edges, targetNodeId, previewStream = 'success' } = await req.json();
+    if (!nodes || !Array.isArray(nodes) || !targetNodeId) {
       return NextResponse.json({ error: "Invalid payload." }, { status: 400 });
     }
 
@@ -53,18 +52,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid Pipeline: Circular dependency detected." }, { status: 400 });
     }
 
-    // Get parent of targetNodeId (we assume column values come from the first parent)
-    const parents = (edges || []).filter((e: any) => e.target === targetNodeId);
-    if (parents.length === 0) {
-      return NextResponse.json({ success: true, values: [] });
-    }
-
-    const parentId = parents[0].source;
-    const isErrorStream = parents[0].sourceHandle === 'error';
-
     const upstreamNodes = new Set<string>();
-    const stack = [parentId];
-    upstreamNodes.add(parentId);
+    const stack = [targetNodeId];
+    upstreamNodes.add(targetNodeId);
     
     const revAdjList: Record<string, string[]> = {};
     edges?.forEach((e: any) => {
@@ -82,6 +72,9 @@ export async function POST(req: Request) {
       });
     }
 
+    // Execute the required DAG up to and INCLUDING the target node
+    let allTempFiles: string[] = [];
+    
     for (const nodeId of sortedNodes) {
       if (!upstreamNodes.has(nodeId)) continue;
       
@@ -97,7 +90,7 @@ export async function POST(req: Request) {
       
       await new Promise<void>((resolve, reject) => {
         conn.exec(`CREATE TEMP TABLE ${safeNodeName} AS (${sqlParts[0]})`, (err: any) => {
-          if (err) reject(new Error(`Values API Error at Node ${nodeId}: ${err.message}`));
+          if (err) reject(new Error(`Error at Node ${nodeId}: ${err.message}`));
           else resolve();
         });
       });
@@ -105,18 +98,24 @@ export async function POST(req: Request) {
       if (sqlParts.length > 1) {
         await new Promise<void>((resolve, reject) => {
           conn.exec(`CREATE TEMP TABLE ${safeNodeName}_error AS (${sqlParts[1]})`, (err: any) => {
-            if (err) reject(new Error(`Values API Error at Node ${nodeId} (Error): ${err.message}`));
+            if (err) reject(new Error(`Error at Node ${nodeId} (Error Stream): ${err.message}`));
             else resolve();
           });
         });
       }
     }
 
-    const parentSafeName = `node_${parentId.replace(/-/g, '_')}${isErrorStream ? '_error' : ''}`;
+    const targetSafeName = `node_${targetNodeId.replace(/-/g, '_')}${previewStream === 'error' ? '_error' : ''}`;
     
-    // Fetch top 100 distinct values
-    const distinctValues = await new Promise<any[]>((resolve, reject) => {
-      conn.all(`SELECT DISTINCT "${targetColumn}" AS val FROM ${parentSafeName} WHERE "${targetColumn}" IS NOT NULL LIMIT 100`, (err: any, res: any) => {
+    const result = await new Promise<any[]>((resolve, reject) => {
+      conn.all(`SELECT * FROM ${targetSafeName} LIMIT 50`, (err: any, res: any) => {
+        if (err) reject(err);
+        else resolve(res);
+      });
+    });
+
+    const schema = await new Promise<any[]>((resolve, reject) => {
+      conn.all(`DESCRIBE ${targetSafeName}`, (err: any, res: any) => {
         if (err) reject(err);
         else resolve(res);
       });
@@ -129,17 +128,17 @@ export async function POST(req: Request) {
       cleanupTempFiles(allTempFiles);
     } catch(e) {}
     
+    const columns = schema.map(col => ({ name: col.column_name, type: col.column_type }));
+
     return NextResponse.json({ 
       success: true, 
-      values: distinctValues.map(r => r.val)
+      preview: {
+        columns,
+        sample_data: result
+      }
     });
 
   } catch (error: any) {
-    try {
-      const { cleanupTempFiles } = await import('@/lib/decryptSqlPaths');
-      cleanupTempFiles(allTempFiles);
-    } catch(e) {}
-    console.error("Values API Error:", error);
-    return NextResponse.json({ error: error.message || "Failed to fetch values." }, { status: 500 });
+    return NextResponse.json({ error: error.message || "Failed to generate preview." }, { status: 500 });
   }
 }

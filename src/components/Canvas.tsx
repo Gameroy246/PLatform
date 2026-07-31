@@ -190,30 +190,46 @@ export default function Canvas() {
         let generatedSql = node.data.sql as string || "";
         const op = node.data.operation;
         const parentEdges = edges.filter(e => e.target === node.id);
-        const parents = parentEdges.map(e => `node_${e.source.replace(/-/g, '_')}`);
+        const parents = parentEdges.map(e => {
+          let p = `node_${e.source.replace(/-/g, '_')}`;
+          if (e.sourceHandle === 'error') p += '_error';
+          return p;
+        });
         const parent1 = parents[0] || 'DUAL';
         const parent2 = parents[1] || 'DUAL';
 
         switch (op) {
+          case 'dataQuality':
+            const dqCol = (node.data.column as string) || '1';
+            const dqOp = (node.data.operator as string) || '=';
+            let dqVal = (node.data.value as string) || '1';
+            if (dqOp.includes('NULL')) dqVal = '';
+            else if (!dqVal.startsWith("'") && isNaN(Number(dqVal))) dqVal = `'${dqVal.replace(/'/g, "''")}'`;
+            const condition = `${dqCol} ${dqOp} ${dqVal}`;
+            generatedSql = `SELECT * FROM ${parent1} WHERE ${condition} ___LDA_DATA_QUALITY_SPLIT___ SELECT * FROM ${parent1} WHERE NOT (${condition})`; 
+            break;
           case 'csvInput': 
-          case 'excelInput':
+          case 'excelInput': {
             const csvFile = String(node.data.file || '');
-            let csvArg = `'${csvFile}'`;
-            try { const parsed = JSON.parse(csvFile); if(Array.isArray(parsed)) csvArg = `[${parsed.map(p=>`'${p}'`).join(',')}]`; } catch(e){}
+            let csvArg = `'${csvFile.replace(/\\/g, '/')}'`;
+            try { const parsed = JSON.parse(csvFile); if(Array.isArray(parsed)) csvArg = `[${parsed.map((p: string) => `'${p.replace(/\\/g, '/')}'`).join(',')}]`; } catch(e){}
             generatedSql = `SELECT * FROM read_csv_auto(${csvArg})`;
             break;
-          case 'jsonInput': 
+          }
+          case 'jsonInput': {
             const jFile = String(node.data.file || '');
-            let jArg = `'${jFile}'`;
-            try { const parsed = JSON.parse(jFile); if(Array.isArray(parsed)) jArg = `[${parsed.map(p=>`'${p}'`).join(',')}]`; } catch(e){}
+            let jArg = `'${jFile.replace(/\\/g, '/')}'`;
+            try { const parsed = JSON.parse(jFile); if(Array.isArray(parsed)) jArg = `[${parsed.map((p: string) => `'${p.replace(/\\/g, '/')}'`).join(',')}]`; } catch(e){}
             generatedSql = `SELECT * FROM read_json_auto(${jArg})`; 
             break;
-          case 'parquetInput': 
+          }
+          case 'parquetInput': {
             const pFile = String(node.data.file || '');
-            let pArg = `'${pFile}'`;
-            try { const parsed = JSON.parse(pFile); if(Array.isArray(parsed)) pArg = `[${parsed.map(p=>`'${p}'`).join(',')}]`; } catch(e){}
+            let pArg = `'${pFile.replace(/\\/g, '/')}'`;
+            try { const parsed = JSON.parse(pFile); if(Array.isArray(parsed)) pArg = `[${parsed.map((p: string) => `'${p.replace(/\\/g, '/')}'`).join(',')}]`; } catch(e){}
             generatedSql = `SELECT * FROM read_parquet(${pArg})`; 
             break;
+          }
 
           case 'postgresInput': generatedSql = `SELECT * FROM postgres_scan('${node.data.connection_string || ''}', '${node.data.table || ''}')`; break;
           
@@ -318,12 +334,31 @@ export default function Canvas() {
       
       if (data.download_url) {
         setDownloadUrl(data.download_url);
-        showToast("Pipeline executed successfully!", "success");
+        showToast("Pipeline executed successfully! Auto-saving...", "success");
+      }
+
+      try {
+        await axios.post('/api/pipelines', { id: 'default-pipeline', name: 'My Main Pipeline', nodes: mappedNodes, edges: mappedEdges });
+      } catch(e) {
+        console.error("Auto-save failed", e);
       }
 
     } catch (error: any) {
       console.error(error);
-      const msg = error.response?.data?.error || error.response?.data?.detail || error.message;
+      let msg = error.response?.data?.error || error.response?.data?.detail || error.message;
+      
+      // Intelligent Error Parsing
+      if (msg.includes('Catalog Error: Table with name')) {
+        msg = 'One of the parent nodes failed or is disconnected. Make sure upstream nodes are configured correctly.';
+      } else if (msg.includes('Catalog Error: Column with name')) {
+        const colMatch = msg.match(/Column with name (.+) does not exist/);
+        msg = colMatch ? `Column ${colMatch[1]} does not exist in the data at this step. Please select a valid column from the dropdown.` : msg;
+      } else if (msg.includes('Parser Error: syntax error at or near')) {
+        msg = 'Syntax Error: You might have unmatched quotes or invalid characters in your text input or condition.';
+      } else if (msg.includes('Binder Error: Could not convert string')) {
+        msg = 'Type Mismatch: You are trying to treat a text string as a number or date, but the data is incompatible.';
+      }
+      
       setExecutionLogs([`[CRITICAL] Execution Failed: ${msg}`]);
       showToast(`Pipeline failed: ${msg}`, 'error');
       

@@ -22,41 +22,41 @@
 
 @layer base {
   :root {
-    --background: #F9FAFB;
-    --foreground: #1C1E23;
+    --background: #FAFAFA;
+    --foreground: #09090B;
     
     --bg: #FFFFFF;
-    --code-bg: #F3F4F6;
-    --text: #374151;
-    --text-h: #111827;
-    --text-muted: #6B7280;
-    --border: #E5E7EB;
-    --accent: #615EFC;
-    --accent-bg: #EEF2FF;
-    --accent-border: #C7D2FE;
-    --social-bg: rgba(255, 255, 255, 0.8);
-    --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    --code-bg: #F4F4F5;
+    --text: #3F3F46;
+    --text-h: #09090B;
+    --text-muted: #71717A;
+    --border: #E4E4E7;
+    --accent: #18181B; /* Sophisticated minimal accent (almost black) */
+    --accent-bg: #F4F4F5;
+    --accent-border: #D4D4D8;
+    --social-bg: rgba(255, 255, 255, 0.7);
+    --shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.03);
   }
   .dark {
-    --background: #09090b;
-    --foreground: #fafafa;
-    --color-surface: #18181b;
-    --color-background: #09090b;
-    --color-border: #27272a;
-    --color-text-main: #fafafa;
-    --color-text-muted: #a1a1aa;
+    --background: #000000;
+    --foreground: #FAFAFA;
+    --color-surface: #09090B;
+    --color-background: #000000;
+    --color-border: #27272A;
+    --color-text-main: #FAFAFA;
+    --color-text-muted: #A1A1AA;
     
-    --bg: #111827;
-    --code-bg: #1F2937;
-    --text: #D1D5DB;
-    --text-h: #F9FAFB;
-    --text-muted: #9CA3AF;
-    --border: #374151;
-    --accent: #615EFC;
-    --accent-bg: rgba(97, 94, 252, 0.1);
-    --accent-border: rgba(97, 94, 252, 0.3);
-    --social-bg: rgba(17, 24, 39, 0.8);
-    --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5), 0 2px 4px -1px rgba(0, 0, 0, 0.4);
+    --bg: #09090B;
+    --code-bg: #18181B;
+    --text: #D4D4D8;
+    --text-h: #FAFAFA;
+    --text-muted: #A1A1AA;
+    --border: #27272A;
+    --accent: #FFFFFF; /* High contrast minimal accent */
+    --accent-bg: #18181B;
+    --accent-border: #3F3F46;
+    --social-bg: rgba(9, 9, 11, 0.7);
+    --shadow: 0 8px 16px -4px rgba(0, 0, 0, 0.6), 0 4px 8px -4px rgba(0, 0, 0, 0.4);
   }
 }
 

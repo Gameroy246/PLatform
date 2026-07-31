@@ -4,6 +4,7 @@ import type { Node, Edge } from '@xyflow/react';
 import Editor from '@monaco-editor/react';
 import axios from 'axios';
 import { FolderOpen, Settings2, Trash2, ArrowRight, ArrowDownRight } from 'lucide-react';
+import DataPreviewModal from './DataPreviewModal';
 
 interface PropertiesPanelProps {
   selectedNode: Node | null;
@@ -15,11 +16,14 @@ interface PropertiesPanelProps {
 
 export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenerate, nodes = [], edges = [] }: PropertiesPanelProps) {
   const [activeTab, setActiveTab] = useState<'settings' | 'description' | 'metadata'>('settings');
+  const [previewStreamMode, setPreviewStreamMode] = useState<'success' | 'error'>('success');
   const [isBrowsing, setIsBrowsing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [previewData, setPreviewData] = useState<any>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState('');
+  const [profileData, setProfileData] = useState<any>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
   
   const [realtimeSchema, setRealtimeSchema] = useState<{name: string, type: string}[]>([]);
   const [schemaLoading, setSchemaLoading] = useState(false);
@@ -120,12 +124,25 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
     try {
       setPreviewLoading(true);
       setPreviewError('');
-      const res = await axios.get(`http://localhost:8000/api/preview/${selectedNode!.id}`);
-      setPreviewData(res.data);
+      const payload = { nodes, edges, targetNodeId: selectedNode!.id, previewStream: previewStreamMode };
+      const res = await axios.post('/api/preview', payload);
+      setPreviewData(res.data.preview);
     } catch (err: any) {
-      setPreviewError(err.response?.data?.detail || err.message);
+      setPreviewError(err.response?.data?.error || err.message);
     } finally {
       setPreviewLoading(false);
+    }
+  };
+
+  const handleProfileNode = async () => {
+    try {
+      setProfileLoading(true);
+      const res = await axios.post('/api/profile', { nodes, edges, targetNodeId: selectedNode!.id });
+      setProfileData(res.data.profile);
+    } catch (err: any) {
+      alert(err.response?.data?.error || err.message);
+    } finally {
+      setProfileLoading(false);
     }
   };
 
@@ -240,13 +257,26 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
                 <div className="flex-1 px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text font-mono text-[10px] overflow-hidden text-ellipsis">
                   {selectedNode.id}
                 </div>
+              </div>
+              <div className="flex gap-2 items-center w-full">
+                {selectedNode.data.operation === 'dataQuality' && (
+                  <select
+                    value={previewStreamMode}
+                    onChange={(e) => setPreviewStreamMode(e.target.value as any)}
+                    className="flex-1 px-2 py-2 bg-code-bg border border-border rounded text-xs text-text focus:outline-none focus:border-accent"
+                  >
+                    <option value="success">Preview Valid Rows</option>
+                    <option value="error">Preview Invalid Rows</option>
+                  </select>
+                )}
                 <button 
                   onClick={handlePreviewNode} 
                   disabled={previewLoading}
-                  className="p-2 bg-accent text-white rounded hover-lift disabled:opacity-50" 
+                  className={`${selectedNode.data.operation === 'dataQuality' ? 'w-auto px-4' : 'w-full justify-center'} flex items-center gap-2 p-2 bg-accent text-white rounded hover-lift disabled:opacity-50`}
                   title="Preview Schema & Data for this Node"
                 >
                   <FolderOpen className="w-4 h-4" />
+                  <span className="text-xs font-semibold uppercase tracking-wide">Preview</span>
                 </button>
               </div>
             </div>
@@ -904,71 +934,46 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
             </div>
             
             <div className="flex flex-col gap-2">
-              <label className="text-xs font-semibold text-text-h">Validation</label>
-              <div className="p-3 bg-code-bg border border-border rounded-md text-sm text-text">
-                <span className="text-green-400 flex items-center gap-2">✓ No errors detected</span>
-              </div>
+              <label className="text-xs font-semibold text-text-h">Data Profiling</label>
+              <button 
+                onClick={handleProfileNode}
+                disabled={profileLoading}
+                className="w-full px-3 py-2 bg-accent text-white rounded-md text-sm font-medium hover-lift disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {profileLoading ? 'Profiling Data...' : 'Run Statistical Profile'}
+              </button>
             </div>
+            
+            {profileData && (
+              <div className="flex flex-col gap-2 mt-2">
+                <label className="text-xs font-semibold text-text-h">Statistics (SUMMARIZE)</label>
+                <div className="flex flex-col gap-2 max-h-64 overflow-y-auto custom-scrollbar p-2 bg-bg border border-border rounded">
+                  {profileData.map((col: any, i: number) => (
+                    <div key={i} className="flex flex-col gap-1 p-2 bg-code-bg rounded border border-border text-xs">
+                      <div className="font-bold text-accent">{col.column_name} <span className="text-text-muted font-normal">({col.column_type})</span></div>
+                      <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-text mt-1">
+                        <div><span className="text-text-muted">Min:</span> {col.min}</div>
+                        <div><span className="text-text-muted">Max:</span> {col.max}</div>
+                        <div><span className="text-text-muted">Nulls:</span> {col.null_percentage}%</div>
+                        <div><span className="text-text-muted">Unique:</span> {col.approx_unique}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
     </aside>
 
-    {/* Preview Modal */}
-    {previewData && (
-      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setPreviewData(null)}>
-        <div className="w-[80vw] max-w-4xl max-h-[80vh] bg-bg border border-border rounded-xl shadow-shadow flex flex-col" onClick={e => e.stopPropagation()}>
-          <div className="p-4 border-b border-border flex justify-between items-center glass-header">
-            <h2 className="text-lg font-bold text-text-h !m-0">Schema & Data Preview: {(selectedNode.data.label as string)}</h2>
-            <button onClick={() => setPreviewData(null)} className="text-text-muted hover:text-text-h">Close</button>
-          </div>
-          <div className="flex-1 overflow-auto p-4 bg-code-bg">
-            <div className="mb-4">
-              <h3 className="text-sm font-bold text-text-h mb-2">Columns Schema</h3>
-              <div className="flex flex-wrap gap-2">
-                {previewData.columns.map((c: any, i: number) => (
-                  <div key={i} className="px-2 py-1 bg-bg border border-border rounded text-xs font-mono">
-                    <span className="text-accent">{c.name}</span> <span className="text-text-muted">{c.type}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <h3 className="text-sm font-bold text-text-h mb-2">Sample Data (Top 10)</h3>
-            <div className="overflow-x-auto border border-border rounded bg-bg">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead className="bg-code-bg">
-                  <tr>
-                    {previewData.columns.map((c: any, i: number) => (
-                      <th key={i} className="p-2 border-b border-r border-border font-semibold text-text-h whitespace-nowrap">{c.name}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {previewData.sample_data.map((row: any, i: number) => (
-                    <tr key={i} className="border-b border-border hover:bg-code-bg/50">
-                      {previewData.columns.map((c: any, j: number) => (
-                        <td key={j} className="p-2 border-r border-border whitespace-nowrap text-text font-mono truncate max-w-[200px]">{String(row[c.name] ?? '')}</td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      </div>
-    )}
-    
-    {/* Error Modal */}
-    {previewError && (
-      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setPreviewError('')}>
-        <div className="w-full max-w-md p-6 bg-bg border border-red-500/50 rounded-xl shadow-shadow text-center" onClick={e => e.stopPropagation()}>
-          <h3 className="text-lg font-bold text-red-400 mb-2">Preview Unavailable</h3>
-          <p className="text-sm text-text mb-4">{previewError}</p>
-          <button onClick={() => setPreviewError('')} className="px-4 py-2 bg-code-bg text-text-h rounded hover-lift">Close</button>
-        </div>
-      </div>
-    )}
+    <DataPreviewModal 
+      previewData={previewData} 
+      previewError={previewError} 
+      setPreviewData={setPreviewData} 
+      setPreviewError={setPreviewError} 
+      nodeLabel={selectedNode.data.label as string || ''} 
+    />
     </>
   );
 }

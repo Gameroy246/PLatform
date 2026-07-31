@@ -7,19 +7,19 @@ export default function TransformNode({ data }: { data: any }) {
   const isAgg = ['groupBy', 'windowFunction', 'pivotTable', 'unpivotTable', 'rollup', 'summaryStats'].includes(data.operation);
   
   return (
-    <div className={`px-4 py-3 min-w-[180px] rounded-md bg-code-bg border-l-4 ${isCleaning ? 'border-l-orange-400' : isAgg ? 'border-l-purple-400' : 'border-l-green-400'} border-y border-r border-border shadow-sm hover:shadow-md transition-shadow relative`}>
+    <div className={`px-4 py-3 min-w-[180px] rounded-lg bg-bg border border-border shadow-sm hover:shadow-md transition-shadow relative`}>
       {/* Input Connection Handle (Left) */}
       <Handle 
         id="target"
         type="target" 
         position={Position.Left} 
-        className="w-2 h-4 rounded-none bg-border border-0 -ml-1" 
+        className="w-2 h-4 rounded-none bg-border border-0 -ml-[5px]" 
       />
 
       {/* Node Header */}
       <div className="flex items-center gap-2 mb-2">
-        {isCleaning ? <Filter className="w-4 h-4 text-orange-400" /> : isAgg ? <Calculator className="w-4 h-4 text-purple-400" /> : <ArrowRightLeft className="w-4 h-4 text-green-400" />}
-        <div className="text-sm font-bold text-text-h">{data.label || 'Transform'}</div>
+        {isCleaning ? <Filter className="w-4 h-4 text-text-muted" /> : isAgg ? <Calculator className="w-4 h-4 text-text-muted" /> : <ArrowRightLeft className="w-4 h-4 text-text-muted" />}
+        <div className="text-sm font-semibold text-text-h">{data.label || 'Transform'}</div>
       </div>
       
       {/* Node Body (Optional summary of config) */}
@@ -28,12 +28,22 @@ export default function TransformNode({ data }: { data: any }) {
       </div>
 
       {/* Output Connection Handle (Right) */}
-      <Handle 
-        id="source"
-        type="source" 
-        position={Position.Right} 
-        className="w-2 h-4 rounded-none bg-accent border-0 -mr-1" 
-      />
+      <div className="flex flex-col gap-2 absolute -right-1 top-1/2 -translate-y-1/2">
+        <Handle 
+          id="source"
+          type="source" 
+          position={Position.Right} 
+          className="w-2 h-4 rounded-none bg-accent border-0 !relative !top-0 !right-0 !transform-none" 
+        />
+        {data.operation === 'dataQuality' && (
+          <Handle 
+            id="error"
+            type="source" 
+            position={Position.Right} 
+            className="w-2 h-4 rounded-none bg-red-500 border-0 !relative !top-0 !right-0 !transform-none" 
+          />
+        )}
+      </div>
     </div>
   );
 }
