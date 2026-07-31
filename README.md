@@ -7,7 +7,7 @@
 
 Local Data Architect solves a critical enterprise problem: building robust data transformations without exposing sensitive datasets to cloud SaaS platforms. This tool gives you the power of a modern data engineering pipeline (joins, aggregations, data quality monitoring, profiling) entirely in your browser, running strictly on your local machine.
 
-## ✨ Enterprise Features (V3)
+##  Enterprise Features (V3)
 
 - **AES-256-GCM Encryption at Rest:** Any file uploaded to the application is immediately encrypted on disk using AES-256-GCM. Decryption only occurs ephemerally in-memory during DuckDB execution.
 - **Blazing Fast Local Execution:** Runs natively on your local machine using the Node DuckDB engine. It safely processes massive datasets by leveraging DuckDB's disk-spilling architecture strictly capped at a 384MB memory limit.
@@ -16,7 +16,7 @@ Local Data Architect solves a critical enterprise problem: building robust data 
 - **Topological DAG Safety:** Advanced graph algorithms strictly enforce acyclic structures. If a circular dependency is detected, the engine halts the graph securely without server crashes.
 - **Linear-Style UI:** Beautiful, minimalist UI leveraging `zinc` palettes, refined typography (Inter font), and sleek structural cards.
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 - Node.js 18+
@@ -42,7 +42,7 @@ npm run dev
 
 4. Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-## 🧠 Architecture Overview
+##  Architecture Overview
 
 The system operates in a stateless, reactive loop:
 1. **The Canvas (`React Flow`)** manages the Directed Acyclic Graph (DAG) state and auto-saves to a local SQLite vault.
@@ -50,7 +50,7 @@ The system operates in a stateless, reactive loop:
 3. **The Profiling Engine (`/api/profile`)** dynamically runs `SUMMARIZE` to display rich data health metrics.
 4. **The Execution Engine (`/api/run`)** compiles the final graph into nested `CREATE TEMP TABLE` DuckDB statements, seamlessly decrypts data on the fly, and executes sequentially.
 
-## 🤝 Contributing
+##  Contributing
 
 We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) and [Code of Conduct](CODE_OF_CONDUCT.md). 
 
