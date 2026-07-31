@@ -1,5 +1,5 @@
 <div align="center">
-  <h1>Local Data Architect 🏗️</h1>
+  <h1>Local Data Architect </h1>
   <p><b>Enterprise-grade, local-first visual SQL pipeline builder powered by DuckDB and Next.js.</b></p>
 </div>
 
