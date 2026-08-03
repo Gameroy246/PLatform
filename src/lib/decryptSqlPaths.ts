@@ -24,8 +24,13 @@ export function decryptSqlPaths(sql: string): { modifiedSql: string, tempFiles: 
   const rawFileMatches = [...modifiedSql.matchAll(/(?:st_read|read_csv_auto|read_parquet|read_json_auto)\s*\(\s*'([^']+)'/gi)];
   for (const m of rawFileMatches) {
     const rawPath = m[1];
-    if (rawPath && !rawPath.startsWith('http') && !fs.existsSync(rawPath)) {
-      throw new Error(`Data Source Error: File not found at path "${rawPath}". Please verify the file exists on disk or browse to select a file.`);
+    if (rawPath && !rawPath.startsWith('http')) {
+      if (!fs.existsSync(rawPath)) {
+        if (/^[a-zA-Z]:[\\/]|^\/[a-zA-Z0-9]/.test(rawPath)) {
+          throw new Error(`Cloud Security Restriction: Local file paths like "${rawPath}" are blocked in the web version. Please use the Browse button to upload your dataset.`);
+        }
+        throw new Error(`Data Source Error: File not found at path "${rawPath}". Please verify the file exists on disk or browse to select a file.`);
+      }
     }
   }
 
