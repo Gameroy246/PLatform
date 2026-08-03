@@ -16,6 +16,15 @@ export async function POST(req: Request) {
     conn.exec("PRAGMA memory_limit='384MB'");
     conn.exec("PRAGMA threads=1");
 
+    // Load spatial extension only if pipeline uses Excel input (st_read)
+    const needsSpatial = nodes.some((n: any) => n.sql?.includes('st_read'));
+    if (needsSpatial) {
+      try {
+        conn.exec("INSTALL spatial");
+        conn.exec("LOAD spatial");
+      } catch(e) { /* extension may already be loaded */ }
+    }
+
     const inDegree: Record<string, number> = {};
     const adjList: Record<string, string[]> = {};
     const nodeMap: Record<string, string> = {};
@@ -107,7 +116,7 @@ export async function POST(req: Request) {
     const targetSafeName = `node_${targetNodeId.replace(/-/g, '_')}${previewStream === 'error' ? '_error' : ''}`;
     
     const result = await new Promise<any[]>((resolve, reject) => {
-      conn.all(`SELECT * FROM ${targetSafeName} LIMIT 50`, (err: any, res: any) => {
+      conn.all(`SELECT * FROM ${targetSafeName} LIMIT 200`, (err: any, res: any) => {
         if (err) reject(err);
         else resolve(res);
       });

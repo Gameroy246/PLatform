@@ -32,6 +32,15 @@ export async function POST(req: Request) {
     conn.exec("PRAGMA memory_limit='384MB'");
     conn.exec("PRAGMA threads=1");
 
+    // Load spatial extension only if pipeline uses Excel input (st_read)
+    const needsSpatial = nodes.some((n: any) => n.sql?.includes('st_read'));
+    if (needsSpatial) {
+      try {
+        conn.exec("INSTALL spatial");
+        conn.exec("LOAD spatial");
+      } catch(e) { /* extension may already be loaded */ }
+    }
+
     const logs: string[] = [];
     const startTime = Date.now();
     let finalNodeId = "";
@@ -132,6 +141,7 @@ export async function POST(req: Request) {
         const sqlParts = modifiedSql.split('___LDA_DATA_QUALITY_SPLIT___');
         
         logs.push(`[${new Date().toISOString()}] Executing: CREATE TEMP TABLE ${safeNodeName} AS (...)`);
+        console.log(`[API RUN] Executing Node ${nodeId}:\nCREATE TEMP TABLE ${safeNodeName} AS (${sqlParts[0]})`);
         await new Promise<void>((resolve, reject) => {
           conn.exec(`CREATE TEMP TABLE ${safeNodeName} AS (${sqlParts[0]})`, (err: any) => {
             if (err) reject(new Error(`Failed at Node ${nodeId}: ${err.message}`)); else resolve();
@@ -178,9 +188,17 @@ export async function POST(req: Request) {
     // Step 3: Fetch result from the final node in the DAG
     const finalSafeName = `node_${finalNodeId.replace(/-/g, '_')}`;
     const result = await new Promise<any[]>((resolve, reject) => {
-      conn.all(`SELECT * FROM ${finalSafeName} LIMIT 100`, (err: any, res: any) => {
+      conn.all(`SELECT * FROM ${finalSafeName} LIMIT 500`, (err: any, res: any) => {
         if (err) reject(err);
         else resolve(res);
+      });
+    });
+
+    // Get actual total row count (not limited)
+    const totalRowCount = await new Promise<number>((resolve, reject) => {
+      conn.all(`SELECT COUNT(*) AS cnt FROM ${finalSafeName}`, (err: any, res: any) => {
+        if (err) resolve(result.length);
+        else resolve(Number(res[0]?.cnt || result.length));
       });
     });
 
@@ -234,7 +252,7 @@ export async function POST(req: Request) {
     return NextResponse.json(serializeObj({ 
       success: true, 
       message: "Pipeline executed successfully.",
-      metadata: { row_count: result.length, column_count: columns.length, columns, memory_limit: "384MB", threads: 1, duration_ms: duration },
+      metadata: { row_count: totalRowCount, sample_count: result.length, column_count: columns.length, columns, memory_limit: "384MB", threads: 1, duration_ms: duration },
       sample_result: result,
       final_sql: nodeMap[finalNodeId] || '',
       logs: logs,

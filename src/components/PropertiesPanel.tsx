@@ -220,6 +220,7 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
   }
   let fileAccept = "*/*";
   if (selectedNode.data.operation === 'csvInput') fileAccept = ".csv";
+  else if (selectedNode.data.operation === 'excelInput') fileAccept = ".xlsx, .xls";
   else if (selectedNode.data.operation === 'jsonInput') fileAccept = ".json";
   else if (selectedNode.data.operation === 'parquetInput') fileAccept = ".parquet";
 
@@ -367,47 +368,67 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
             </div>
 
             {['csvInput', 'jsonInput', 'parquetInput', 'excelInput', 'avroInput', 'orcInput', 'featherInput', 'fixedWidthInput', 'xmlInput', 'arrowInput'].includes(selectedNode.data.operation as string) && (
-              <div className="flex flex-col gap-2">
-                <label className="text-xs font-semibold text-text-h">Uploaded Files</label>
-                <div className="flex flex-col gap-2 bg-code-bg p-2 rounded-md border border-border max-h-40 overflow-y-auto custom-scrollbar">
-                  {(() => {
-                    let fileList: string[] = [];
-                    try {
-                      const parsed = JSON.parse(selectedNode.data.file as string || '[]');
-                      fileList = Array.isArray(parsed) ? parsed : (selectedNode.data.file ? [selectedNode.data.file as string] : []);
-                    } catch (e) {
-                      fileList = selectedNode.data.file ? [selectedNode.data.file as string] : [];
-                    }
-                    
-                    return fileList.length > 0 ? fileList.map((f, i) => (
-                      <div key={i} className="flex justify-between items-center text-xs bg-bg p-1 rounded border border-border">
-                        <span className="truncate flex-1 max-w-[200px]" title={f}>{f.split(/[\\/]/).pop()}</span>
-                        <button onClick={() => {
-                          const newArr = [...fileList];
-                          newArr.splice(i, 1);
-                          onUpdateNode(selectedNode.id, { file: JSON.stringify(newArr) });
-                        }} className="text-red-500 hover:bg-red-500/10 p-1 rounded"><Trash2 className="w-3 h-3" /></button>
-                      </div>
-                    )) : <div className="text-xs text-text-muted text-center py-2">No files uploaded.</div>;
-                  })()}
-                </div>
-                <div className="flex gap-2 mt-1">
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">File Path (Local or Uploaded)</label>
                   <input 
-                    type="file" 
-                    multiple
-                    ref={fileInputRef} 
-                    className="hidden" 
-                    onChange={handleFileUpload}
-                    accept={fileAccept}
+                    type="text" 
+                    value={(() => {
+                      try {
+                        const parsed = JSON.parse(selectedNode.data.file as string || '');
+                        return Array.isArray(parsed) ? parsed[0] || '' : String(selectedNode.data.file || '');
+                      } catch(e) {
+                        return String(selectedNode.data.file || '');
+                      }
+                    })()}
+                    onChange={(e) => onUpdateNode(selectedNode.id, { file: e.target.value })}
+                    placeholder="e.g. D:/data/uncleaned.xlsx or select file below"
+                    className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors font-mono"
                   />
-                  <button 
-                    onClick={handleBrowseFile}
-                    disabled={isBrowsing}
-                    className="w-full px-3 py-2 bg-accent text-white rounded-md text-sm font-medium hover-lift disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                  >
-                    <FolderOpen className="w-4 h-4" />
-                    {isBrowsing ? 'Uploading...' : 'Browse Files'}
-                  </button>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">Uploaded Files</label>
+                  <div className="flex flex-col gap-2 bg-code-bg p-2 rounded-md border border-border max-h-40 overflow-y-auto custom-scrollbar">
+                    {(() => {
+                      let fileList: string[] = [];
+                      try {
+                        const parsed = JSON.parse(selectedNode.data.file as string || '[]');
+                        fileList = Array.isArray(parsed) ? parsed : (selectedNode.data.file ? [selectedNode.data.file as string] : []);
+                      } catch (e) {
+                        fileList = selectedNode.data.file ? [selectedNode.data.file as string] : [];
+                      }
+                      
+                      return fileList.length > 0 ? fileList.map((f, i) => (
+                        <div key={i} className="flex justify-between items-center text-xs bg-bg p-1 rounded border border-border">
+                          <span className="truncate flex-1 max-w-[200px]" title={f}>{f.split(/[\\/]/).pop()}</span>
+                          <button onClick={() => {
+                            const newArr = [...fileList];
+                            newArr.splice(i, 1);
+                            onUpdateNode(selectedNode.id, { file: JSON.stringify(newArr) });
+                          }} className="text-red-500 hover:bg-red-500/10 p-1 rounded"><Trash2 className="w-3 h-3" /></button>
+                        </div>
+                      )) : <div className="text-xs text-text-muted text-center py-2">No files uploaded.</div>;
+                    })()}
+                  </div>
+                  <div className="flex gap-2 mt-1">
+                    <input 
+                      type="file" 
+                      multiple
+                      ref={fileInputRef} 
+                      className="hidden" 
+                      onChange={handleFileUpload}
+                      accept={fileAccept}
+                    />
+                    <button 
+                      onClick={handleBrowseFile}
+                      disabled={isBrowsing}
+                      className="w-full px-3 py-2 bg-accent text-white rounded-md text-sm font-medium hover-lift disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                      <FolderOpen className="w-4 h-4" />
+                      {isBrowsing ? 'Uploading...' : 'Browse / Upload Files'}
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -496,23 +517,8 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
 
             {selectedNode.data.operation === 'removeNulls' && (
               <div className="flex flex-col gap-2">
-                <label className="text-xs font-semibold text-text-h">Filter Condition</label>
-                <div className="flex gap-2">
-                  <div className="flex-1">
-                    <ColumnSelect value={selectedNode.data.filterCol as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { filterCol: val })} placeholder="Column" />
-                  </div>
-                  <select value={selectedNode.data.filterOp as string || '='} onChange={(e) => onUpdateNode(selectedNode.id, { filterOp: e.target.value })} className="w-16 px-1 py-2 bg-code-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors">
-                    <option value="=">=</option>
-                    <option value="!=">!=</option>
-                    <option value=">">&gt;</option>
-                    <option value="<">&lt;</option>
-                    <option value=">=">&gt;=</option>
-                    <option value="<=">&lt;=</option>
-                  </select>
-                  <div className="flex-1">
-                    <ValueSelect column={selectedNode.data.filterCol as string} value={selectedNode.data.filterVal as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { filterVal: val })} placeholder="Value" />
-                  </div>
-                </div>
+                <label className="text-xs font-semibold text-text-h">Target Column (Remove if Null)</label>
+                <ColumnSelect value={selectedNode.data.column as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { column: val })} placeholder="e.g. email" />
               </div>
             )}
 
@@ -642,14 +648,25 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
 
             {selectedNode.data.operation === 'filterRows' && (
               <div className="flex flex-col gap-2">
-                <label className="text-xs font-semibold text-text-h">SQL Condition</label>
-                <input 
-                  type="text" 
-                  value={selectedNode.data.condition as string || ''}
-                  onChange={(e) => onUpdateNode(selectedNode.id, { condition: e.target.value })}
-                  placeholder="e.g. age > 18 AND status = 'active'"
-                  className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
-                />
+                <label className="text-xs font-semibold text-text-h">Filter Condition</label>
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <ColumnSelect value={selectedNode.data.filterCol as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { filterCol: val })} placeholder="Column" />
+                  </div>
+                  <select value={selectedNode.data.filterOp as string || '='} onChange={(e) => onUpdateNode(selectedNode.id, { filterOp: e.target.value })} className="w-16 px-1 py-2 bg-code-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors">
+                    <option value="=">=</option>
+                    <option value="!=">!=</option>
+                    <option value=">">&gt;</option>
+                    <option value="<">&lt;</option>
+                    <option value=">=">&gt;=</option>
+                    <option value="<=">&lt;=</option>
+                    <option value="IS NULL">IS NULL</option>
+                    <option value="IS NOT NULL">IS NOT NULL</option>
+                  </select>
+                  <div className="flex-1">
+                    <ValueSelect column={selectedNode.data.filterCol as string} value={selectedNode.data.filterVal as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { filterVal: val })} placeholder="Value" />
+                  </div>
+                </div>
               </div>
             )}
 
@@ -1087,6 +1104,85 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
                 <label className="text-xs font-semibold text-text-h">Date/Timestamp Column</label>
                 <ColumnSelect value={selectedNode.data.column as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { column: val })} placeholder="e.g. created_at" />
               </div>
+            )}
+
+            {selectedNode.data.operation === 'regexReplace' && (
+              <>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">Target Column</label>
+                  <ColumnSelect value={selectedNode.data.column as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { column: val })} placeholder="e.g. text" />
+                </div>
+                <div className="flex flex-col gap-2 mt-2">
+                  <label className="text-xs font-semibold text-text-h">Regex Pattern</label>
+                  <input type="text" value={selectedNode.data.pattern as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { pattern: e.target.value })} placeholder="e.g. [0-9]+" className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text" />
+                </div>
+                <div className="flex flex-col gap-2 mt-2">
+                  <label className="text-xs font-semibold text-text-h">Replacement</label>
+                  <input type="text" value={selectedNode.data.replacement as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { replacement: e.target.value })} placeholder="e.g. NUM" className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text" />
+                </div>
+              </>
+            )}
+
+            {selectedNode.data.operation === 'substringCol' && (
+              <>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">Target Column</label>
+                  <ColumnSelect value={selectedNode.data.column as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { column: val })} placeholder="e.g. name" />
+                </div>
+                <div className="flex gap-2 mt-2">
+                  <div className="flex flex-col gap-2 w-1/2">
+                    <label className="text-xs font-semibold text-text-h">Start Index (1-based)</label>
+                    <input type="number" value={selectedNode.data.start as string || '1'} onChange={(e) => onUpdateNode(selectedNode.id, { start: e.target.value })} className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text" />
+                  </div>
+                  <div className="flex flex-col gap-2 w-1/2">
+                    <label className="text-xs font-semibold text-text-h">Length</label>
+                    <input type="number" value={selectedNode.data.length as string || '10'} onChange={(e) => onUpdateNode(selectedNode.id, { length: e.target.value })} className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text" />
+                  </div>
+                </div>
+              </>
+            )}
+
+            {selectedNode.data.operation === 'leftRightString' && (
+              <>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">Target Column</label>
+                  <ColumnSelect value={selectedNode.data.column as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { column: val })} placeholder="e.g. name" />
+                </div>
+                <div className="flex gap-2 mt-2">
+                  <div className="flex flex-col gap-2 w-1/2">
+                    <label className="text-xs font-semibold text-text-h">Direction</label>
+                    <select value={selectedNode.data.direction as string || 'LEFT'} onChange={(e) => onUpdateNode(selectedNode.id, { direction: e.target.value })} className="px-2 py-2 bg-code-bg border border-border rounded-md text-sm text-text">
+                      <option value="LEFT">LEFT</option>
+                      <option value="RIGHT">RIGHT</option>
+                    </select>
+                  </div>
+                  <div className="flex flex-col gap-2 w-1/2">
+                    <label className="text-xs font-semibold text-text-h">Length</label>
+                    <input type="number" value={selectedNode.data.length as string || '5'} onChange={(e) => onUpdateNode(selectedNode.id, { length: e.target.value })} className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text" />
+                  </div>
+                </div>
+              </>
+            )}
+
+            {selectedNode.data.operation === 'dateDiff' && (
+              <>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">Start Date Column</label>
+                  <ColumnSelect value={selectedNode.data.startCol as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { startCol: val })} placeholder="e.g. created_at" />
+                </div>
+                <div className="flex flex-col gap-2 mt-2">
+                  <label className="text-xs font-semibold text-text-h">End Date Column</label>
+                  <ColumnSelect value={selectedNode.data.endCol as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { endCol: val })} placeholder="e.g. updated_at" />
+                </div>
+                <div className="flex flex-col gap-2 mt-2">
+                  <label className="text-xs font-semibold text-text-h">Difference In</label>
+                  <select value={selectedNode.data.datePart as string || 'day'} onChange={(e) => onUpdateNode(selectedNode.id, { datePart: e.target.value })} className="px-2 py-2 bg-code-bg border border-border rounded-md text-sm text-text">
+                    <option value="day">Days</option>
+                    <option value="month">Months</option>
+                    <option value="year">Years</option>
+                  </select>
+                </div>
+              </>
             )}
 
             {selectedNode.data.operation === 'aiTransform' && (

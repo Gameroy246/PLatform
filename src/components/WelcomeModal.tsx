@@ -5,9 +5,11 @@ import { LayoutTemplate, PlusCircle, Clock, FolderOpen } from 'lucide-react';
 interface WelcomeModalProps {
   onNew: () => void;
   onLoadTemplate: (id: string) => void;
+  onOpenFile?: () => void;
+  onOpenRecent?: () => void;
 }
 
-export default function WelcomeModal({ onNew, onLoadTemplate }: WelcomeModalProps) {
+export default function WelcomeModal({ onNew, onLoadTemplate, onOpenFile, onOpenRecent }: WelcomeModalProps) {
   const [recent, setRecent] = useState<any[]>([]);
   
   useEffect(() => {
@@ -31,7 +33,7 @@ export default function WelcomeModal({ onNew, onLoadTemplate }: WelcomeModalProp
             <button onClick={onNew} className="w-full p-3 rounded-lg bg-accent text-white font-medium hover-bg-lift transition-colors flex items-center gap-3">
               <PlusCircle className="w-5 h-5" /> Blank Pipeline
             </button>
-            <button className="w-full p-3 rounded-lg bg-bg border border-border text-text hover:bg-code-bg transition-colors flex items-center gap-3">
+            <button onClick={onOpenFile} className="w-full p-3 rounded-lg bg-bg border border-border text-text hover:bg-code-bg transition-colors flex items-center gap-3">
               <FolderOpen className="w-5 h-5 text-accent" /> Open File...
             </button>
           </div>
@@ -46,7 +48,7 @@ export default function WelcomeModal({ onNew, onLoadTemplate }: WelcomeModalProp
              ) : (
                <div className="flex flex-col gap-2">
                  {recent.map(r => (
-                   <button key={r.id} onClick={onNew} className="p-3 text-left bg-code-bg border border-border rounded-lg hover:border-accent hover:bg-accent-bg transition-colors">
+                   <button key={r.id} onClick={onOpenRecent || onNew} className="p-3 text-left bg-code-bg border border-border rounded-lg hover:border-accent hover:bg-accent-bg transition-colors">
                      <div className="font-bold text-text-h">{r.name}</div>
                      <div className="text-xs text-text-muted mt-1">Last edited {r.date}</div>
                    </button>

@@ -4,7 +4,8 @@ import type { DragEvent } from 'react'; // FIXED: Strict type import
 import axios from 'axios';
 import { ReactFlow, MiniMap, Controls, Background, BackgroundVariant, useReactFlow } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Play, Database, ChevronDown, ChevronRight, FileInput, Filter, Calculator, ArrowRightLeft, FolderOutput, Sun, Moon, Star } from 'lucide-react';
+import { useRef } from 'react';
+import { Play, Database, ChevronDown, ChevronRight, FileInput, Filter, Calculator, ArrowRightLeft, FolderOutput, Sun, Moon, Star, Save, Download, FolderOpen } from 'lucide-react';
 import dynamic from 'next/dynamic';
 const Editor = dynamic(() => import('@monaco-editor/react'), { ssr: false });
 import { useStore } from '../store';
@@ -198,6 +199,63 @@ export default function Canvas() {
     }
   };
 
+  const pipelineFileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleSavePipelineToFile = () => {
+    if (nodes.length === 0) {
+      showToast("Canvas is empty. Nothing to save.", "error");
+      return;
+    }
+    const data = JSON.stringify({ version: "1.0", savedNodes: nodes, savedEdges: edges }, null, 2);
+    const blob = new Blob([data], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `pipeline-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast("Pipeline saved to JSON file!", "success");
+  };
+
+  const sanitizeEdges = (rawEdges: any[]) => {
+    return (rawEdges || []).map((e: any) => {
+      const clean = { ...e };
+      if (['out', 'in1', 'in2'].includes(clean.sourceHandle)) delete clean.sourceHandle;
+      if (['out', 'in1', 'in2'].includes(clean.targetHandle)) delete clean.targetHandle;
+      return clean;
+    });
+  };
+
+  const handleLoadPipelineFromFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const content = event.target?.result as string;
+        const parsed = JSON.parse(content);
+        const loadedNodes = parsed.savedNodes || parsed.nodes || [];
+        const loadedEdges = parsed.savedEdges || parsed.edges || [];
+
+        if (!Array.isArray(loadedNodes)) {
+          showToast("Invalid pipeline file format.", "error");
+          return;
+        }
+
+        setNodes(loadedNodes);
+        setEdges(sanitizeEdges(loadedEdges));
+        setIsWelcomeModalOpen(false);
+        showToast(`Loaded pipeline with ${loadedNodes.length} nodes!`, "success");
+      } catch (err: any) {
+        console.error("Failed to parse pipeline file:", err);
+        showToast("Error parsing pipeline JSON file.", "error");
+      }
+    };
+    reader.readAsText(file);
+    if (pipelineFileInputRef.current) pipelineFileInputRef.current.value = "";
+  };
+
   const handleOpenRecent = () => {
     setIsWelcomeModalOpen(false);
     const savedPipeline = localStorage.getItem('ARCHITECT_PIPELINE');
@@ -206,7 +264,7 @@ export default function Canvas() {
         const { savedNodes, savedEdges, savedFavorites } = JSON.parse(savedPipeline);
         if (savedNodes && savedNodes.length > 0) {
           setNodes(savedNodes || []);
-          setEdges(savedEdges || []);
+          setEdges(sanitizeEdges(savedEdges || []));
           setFavorites(savedFavorites || []);
           setMacros(JSON.parse(localStorage.getItem('ARCHITECT_MACROS') || '[]'));
         }
@@ -424,6 +482,46 @@ export default function Canvas() {
       showToast(e.response?.data?.error || "Failed to fetch input preview", "error");
     }
   };
+
+  useEffect(() => {
+    if (!selectedNode) return;
+    
+    const abortController = new AbortController();
+    
+    const timeout = setTimeout(async () => {
+      try {
+        const mappedNodes = nodes.map(n => ({ id: n.id, sql: generateNodeSQL(n, edges) }));
+        
+        // Fetch output preview
+        const payload = { nodes: mappedNodes, edges, targetNodeId: selectedNode.id };
+        const res = await axios.post('/api/preview', payload, { signal: abortController.signal });
+        if (res.data?.preview?.sample_data) {
+           setPreviewData(res.data.preview.sample_data);
+        }
+        
+        // Fetch input preview (from first parent) — only if output succeeded
+        if (abortController.signal.aborted) return;
+        const parentEdges = edges.filter(e => e.target === selectedNode.id);
+        if (parentEdges.length > 0) {
+           const inPayload = { nodes: mappedNodes, edges, targetNodeId: parentEdges[0].source };
+           const inRes = await axios.post('/api/preview', inPayload, { signal: abortController.signal });
+           if (inRes.data?.preview?.sample_data) {
+              setInputPreviewData(inRes.data.preview.sample_data);
+           }
+        } else {
+           setInputPreviewData([]);
+        }
+      } catch (e: any) {
+        if (e?.name === 'CanceledError' || e?.code === 'ERR_CANCELED') return; // expected abort
+        // Silently catch auto-preview errors to not spam the user while typing
+      }
+    }, 800);
+    
+    return () => {
+      clearTimeout(timeout);
+      abortController.abort();
+    };
+  }, [nodes, edges, selectedNode?.id]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -674,6 +772,30 @@ export default function Canvas() {
           </h1>
         </div>
         <div className="flex items-center gap-4">
+          <input 
+            type="file" 
+            ref={pipelineFileInputRef} 
+            accept=".json" 
+            onChange={handleLoadPipelineFromFile} 
+            className="hidden" 
+          />
+          
+          <button 
+            onClick={() => pipelineFileInputRef.current?.click()} 
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold border border-border rounded-md hover:bg-code-bg hover:text-text transition-colors shadow-sm"
+            title="Open Pipeline from JSON File"
+          >
+            <FolderOpen className="w-4 h-4 text-accent" /> Open Pipeline
+          </button>
+          
+          <button 
+            onClick={handleSavePipelineToFile} 
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold border border-border rounded-md hover:bg-code-bg hover:text-text transition-colors shadow-sm mr-2"
+            title="Save Pipeline to JSON File"
+          >
+            <Save className="w-4 h-4 text-accent" /> Save Pipeline
+          </button>
+
           <button 
             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} 
             className="p-2 border border-border rounded-md hover-lift bg-code-bg text-text transition-colors"
@@ -916,7 +1038,9 @@ export default function Canvas() {
         {/* Welcome Modal */}
         {isWelcomeModalOpen && (
           <WelcomeModal 
-             onNew={handleOpenRecent} 
+             onNew={() => { setNodes([]); setEdges([]); setIsWelcomeModalOpen(false); }} 
+             onOpenRecent={handleOpenRecent}
+             onOpenFile={() => pipelineFileInputRef.current?.click()}
              onLoadTemplate={handleLoadTemplate} 
           />
         )}
@@ -1072,7 +1196,7 @@ export default function Canvas() {
                 {pipelineMetadata && (
                   <div className="flex gap-4 p-2 bg-code-bg text-xs border-b border-border items-center">
                     <span className="text-accent font-bold">PROFILING</span>
-                    <span>Rows: {pipelineMetadata.row_count}</span>
+                    <span>Total Rows: {pipelineMetadata.row_count?.toLocaleString()}{pipelineMetadata.sample_count ? ` (showing ${pipelineMetadata.sample_count})` : ''}</span>
                     <span>Columns: {pipelineMetadata.column_count}</span>
                     {downloadUrl && (
                       <div className="ml-auto flex items-center gap-2">

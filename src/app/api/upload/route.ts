@@ -32,17 +32,17 @@ export async function POST(req: Request) {
     let headers: string[] = [];
 
     if (ext === ".xlsx" || ext === ".xls") {
-      const workbook = xlsx.read(buffer, { type: "buffer" });
+      const workbook = xlsx.read(buffer, { type: "buffer", raw: true, cellDates: true });
       const sheetName = workbook.SheetNames[0];
       const sheet = workbook.Sheets[sheetName];
-      const csvData = xlsx.utils.sheet_to_csv(sheet);
+      const csvData = xlsx.utils.sheet_to_csv(sheet, { blankrows: true, rawNumbers: false });
       
       const { encryptBuffer } = await import('@/lib/encryption');
       const encrypted = encryptBuffer(Buffer.from(csvData, 'utf-8'));
       fs.writeFileSync(finalPath, encrypted);
       
       const firstLine = csvData.split('\n')[0] || '';
-      headers = firstLine.split(',').map(h => h.trim());
+      headers = firstLine.split(',').map(h => h.trim().replace(/^"|"$/g, ''));
     } else {
       const { encryptBuffer } = await import('@/lib/encryption');
       const encrypted = encryptBuffer(buffer);

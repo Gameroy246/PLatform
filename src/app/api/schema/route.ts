@@ -16,6 +16,15 @@ export async function POST(req: Request) {
     conn.exec("PRAGMA memory_limit='384MB'");
     conn.exec("PRAGMA threads=1");
 
+    // Load spatial extension only if pipeline uses Excel input (st_read)
+    const needsSpatial = nodes.some((n: any) => n.sql?.includes('st_read'));
+    if (needsSpatial) {
+      try {
+        conn.exec("INSTALL spatial");
+        conn.exec("LOAD spatial");
+      } catch(e) { /* extension may already be loaded */ }
+    }
+
     const inDegree: Record<string, number> = {};
     const adjList: Record<string, string[]> = {};
     const nodeMap: Record<string, string> = {};
@@ -94,6 +103,7 @@ export async function POST(req: Request) {
       const safeNodeName = `node_${nodeId.replace(/-/g, '_')}`;
       const sqlParts = modifiedSql.split('___LDA_DATA_QUALITY_SPLIT___');
       
+      console.log(`[API SCHEMA] Executing Node ${nodeId}:\nCREATE TEMP TABLE ${safeNodeName} AS (${sqlParts[0]})`);
       await new Promise<void>((resolve, reject) => {
         conn.exec(`CREATE TEMP TABLE ${safeNodeName} AS (${sqlParts[0]})`, (err: any) => {
           if (err) reject(new Error(`Schema Error at Node ${nodeId}: ${err.message}`));
