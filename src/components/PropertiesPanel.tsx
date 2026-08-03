@@ -1,7 +1,8 @@
 "use client";
 import { useState, useRef, useEffect } from 'react';
 import type { Node, Edge } from '@xyflow/react';
-import Editor from '@monaco-editor/react';
+import dynamic from 'next/dynamic';
+const Editor = dynamic(() => import('@monaco-editor/react'), { ssr: false });
 import axios from 'axios';
 import { FolderOpen, Settings2, Trash2, ArrowRight, ArrowDownRight, Star } from 'lucide-react';
 import DataPreviewModal from './DataPreviewModal';
