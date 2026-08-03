@@ -40,6 +40,12 @@ type RFState = {
   deleteSelected: () => void;
   duplicateSelected: () => void;
   setNodeStatuses: (statuses: Record<string, any>) => void;
+  setNodes: (nodes: Node[]) => void;
+  setEdges: (edges: Edge[]) => void;
+  favorites: string[];
+  addFavorite: (operation: string) => void;
+  removeFavorite: (operation: string) => void;
+  setFavorites: (favs: string[]) => void;
 };
 
 export const useStore = create<RFState>((set, get) => ({
@@ -47,6 +53,18 @@ export const useStore = create<RFState>((set, get) => ({
   edges: [],
   history: [],
   future: [],
+  favorites: [],
+  addFavorite: (operation: string) => set(state => {
+    const newFavs = [...new Set([...state.favorites, operation])];
+    localStorage.setItem('ARCHITECT_FAVORITES', JSON.stringify(newFavs));
+    return { favorites: newFavs };
+  }),
+  removeFavorite: (operation: string) => set(state => {
+    const newFavs = state.favorites.filter(f => f !== operation);
+    localStorage.setItem('ARCHITECT_FAVORITES', JSON.stringify(newFavs));
+    return { favorites: newFavs };
+  }),
+  setFavorites: (favs: string[]) => set({ favorites: favs }),
   
   saveHistory: () => {
     const { nodes, edges, history } = get();
@@ -135,6 +153,9 @@ export const useStore = create<RFState>((set, get) => ({
   onNodesChange: (changes: NodeChange[]) => {
     set({ nodes: applyNodeChanges(changes, get().nodes) });
   },
+  
+  setNodes: (nodes: Node[]) => set({ nodes }),
+  setEdges: (edges: Edge[]) => set({ edges }),
   
   onEdgesChange: (changes: EdgeChange[]) => {
     set({ edges: applyEdgeChanges(changes, get().edges) });

@@ -78,8 +78,7 @@ export async function POST(req: Request) {
     for (const nodeId of sortedNodes) {
       if (!upstreamNodes.has(nodeId)) continue;
       
-      const sql = nodeMap[nodeId];
-      if (!sql || sql === "SELECT 'Disconnected' AS status") continue;
+      let sql = nodeMap[nodeId] || "SELECT 'Disconnected' AS status";
       
       const { generateNodeHash, getCacheFilePath, isEncryptedCached, getEncryptedCacheFilePath } = await import('@/lib/cachingEngine');
       const { encryptFile, decryptFile } = await import('@/lib/encryption');
@@ -132,10 +131,11 @@ export async function POST(req: Request) {
       cleanupTempFiles(allTempFiles);
     } catch(e) {}
     
-    return NextResponse.json({ 
+    const serializeObj = (obj: any) => JSON.parse(JSON.stringify(obj, (k, v) => typeof v === 'bigint' ? Number(v) : v));
+    return NextResponse.json(serializeObj({ 
       success: true, 
       profile: result
-    });
+    }));
 
   } catch (error: any) {
     try {

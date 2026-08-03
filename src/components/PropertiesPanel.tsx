@@ -3,8 +3,10 @@ import { useState, useRef, useEffect } from 'react';
 import type { Node, Edge } from '@xyflow/react';
 import Editor from '@monaco-editor/react';
 import axios from 'axios';
-import { FolderOpen, Settings2, Trash2, ArrowRight, ArrowDownRight } from 'lucide-react';
+import { FolderOpen, Settings2, Trash2, ArrowRight, ArrowDownRight, Star } from 'lucide-react';
 import DataPreviewModal from './DataPreviewModal';
+import { generateNodeSQL } from '../lib/sqlGenerator';
+import { useStore } from '../store';
 
 interface PropertiesPanelProps {
   selectedNode: Node | null;
@@ -15,6 +17,7 @@ interface PropertiesPanelProps {
 }
 
 export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenerate, nodes = [], edges = [] }: PropertiesPanelProps) {
+  const { favorites, addFavorite, removeFavorite } = useStore();
   const [activeTab, setActiveTab] = useState<'settings' | 'description' | 'metadata'>('settings');
   const [previewStreamMode, setPreviewStreamMode] = useState<'success' | 'error'>('success');
   const [isBrowsing, setIsBrowsing] = useState(false);
@@ -48,7 +51,8 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
     const fetchSchema = async () => {
       setSchemaLoading(true);
       try {
-        const payload = { nodes, edges, targetNodeId: selectedNode.id };
+        const mappedNodes = nodes.map(n => ({ ...n, sql: generateNodeSQL(n, edges) }));
+        const payload = { nodes: mappedNodes, edges, targetNodeId: selectedNode.id };
         const res = await axios.post('/api/schema', payload);
         if (isMounted && res.data.schema) {
           setRealtimeSchema(res.data.schema);
@@ -72,7 +76,7 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
     <select 
       value={value || ''} 
       onChange={(e) => onChange(e.target.value)}
-      className="w-full px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
+      className="w-full px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
     >
       <option value="" disabled>{placeholder || 'Select a column...'}</option>
       {realtimeSchema.map(c => <option key={c.name} value={c.name}>{c.name} ({c.type})</option>)}
@@ -92,7 +96,8 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
       const fetchValues = async () => {
         setLoading(true);
         try {
-          const payload = { nodes, edges, targetNodeId: selectedNode.id, columnName: column };
+          const mappedNodes = nodes.map(n => ({ ...n, sql: generateNodeSQL(n, edges) }));
+          const payload = { nodes: mappedNodes, edges, targetNodeId: selectedNode.id, columnName: column };
           const res = await axios.post('/api/values', payload);
           if (isMounted && res.data.values) {
             setValues(res.data.values);
@@ -112,7 +117,7 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
       <select 
         value={value || ''} 
         onChange={(e) => onChange(e.target.value)}
-        className="w-full px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
+        className="w-full px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
       >
         <option value="" disabled>{loading ? 'Loading...' : (placeholder || 'Select a value...')}</option>
         {values.map(v => <option key={String(v)} value={String(v)}>{String(v)}</option>)}
@@ -202,7 +207,7 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
 
   if (!selectedNode) {
     return (
-      <aside className="w-72 border-l border-border bg-code-bg p-4 z-10 hidden lg:block relative">
+      <aside className="h-full border-l border-border bg-code-bg p-4 z-10 hidden lg:block relative">
         <h2 className="text-xs font-bold text-text uppercase tracking-wider !m-0 mb-2">
           Properties
         </h2>
@@ -220,7 +225,7 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
 
   return (
     <>
-    <aside className="w-72 border-l border-border bg-code-bg flex flex-col z-10 hidden lg:block relative">
+    <aside className="h-full border-l border-border bg-code-bg flex flex-col z-10 hidden lg:flex relative">
       <div className="p-4 border-b border-border">
         <h2 className="text-xs font-bold text-text uppercase tracking-wider !m-0">
           Properties
@@ -257,6 +262,13 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
                 <div className="flex-1 px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text font-mono text-[10px] overflow-hidden text-ellipsis">
                   {selectedNode.id}
                 </div>
+                <button 
+                  onClick={() => favorites.includes(selectedNode.data.operation as string) ? removeFavorite(selectedNode.data.operation as string) : addFavorite(selectedNode.data.operation as string)}
+                  className="p-2 border border-border rounded-md hover:bg-accent-bg transition-colors"
+                  title={favorites.includes(selectedNode.data.operation as string) ? "Remove from Favorites" : "Add to Favorites"}
+                >
+                  <Star className={`w-4 h-4 ${favorites.includes(selectedNode.data.operation as string) ? 'text-yellow-500 fill-yellow-500' : 'text-text-muted'}`} />
+                </button>
               </div>
               <div className="flex gap-2 items-center w-full">
                 {selectedNode.data.operation === 'dataQuality' && (
@@ -287,11 +299,73 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
                 type="text" 
                 value={selectedNode.data.label as string || ''}
                 onChange={(e) => onUpdateNode(selectedNode.id, { label: e.target.value })}
-                className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
+                className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
               />
             </div>
 
-            {(selectedNode.data.operation === 'csvInput' || selectedNode.data.operation === 'jsonInput' || selectedNode.data.operation === 'parquetInput' || selectedNode.data.operation === 'excelInput') && (
+            <div className="flex flex-col gap-2">
+              <label className="text-xs font-semibold text-text-h">Node Color</label>
+              <div className="flex gap-2">
+                {[
+                  { value: '', label: 'Default', light: 'var(--bg)', dark: 'var(--bg)' },
+                  { value: '#3b1c1c', label: 'Red', light: '#fecaca', dark: '#3b1c1c' },
+                  { value: '#1c2d3b', label: 'Blue', light: '#bfdbfe', dark: '#1c2d3b' },
+                  { value: '#1a3a2a', label: 'Green', light: '#bbf7d0', dark: '#1a3a2a' },
+                  { value: '#3b351a', label: 'Yellow', light: '#fef08a', dark: '#3b351a' },
+                  { value: '#2d1c3b', label: 'Purple', light: '#e9d5ff', dark: '#2d1c3b' },
+                ].map((c) => (
+                  <button
+                    key={c.value || 'default'}
+                    onClick={() => onUpdateNode(selectedNode.id, { color: c.value || '' })}
+                    className={`w-6 h-6 rounded-full border-2 transition-all ${selectedNode.data.color === c.value || (!selectedNode.data.color && !c.value) ? 'border-accent scale-110' : 'border-border hover:scale-105'}`}
+                    style={{ backgroundColor: c.value || 'var(--code-bg)' }}
+                    title={c.label}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {selectedNode.data.operation === 'dataContract' && (
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-semibold text-text-h">Constraint Rule (SQL WHERE syntax)</label>
+                <input 
+                  type="text" 
+                  value={selectedNode.data.rule as string || ''}
+                  onChange={(e) => onUpdateNode(selectedNode.id, { rule: e.target.value })}
+                  placeholder="e.g. amount > 0 AND status IS NOT NULL"
+                  className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors font-mono"
+                />
+              </div>
+            )}
+
+            {selectedNode.data.operation === 'autoMap' && (
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-semibold text-text-h">Column Mapping (col AS new_col)</label>
+                <input 
+                  type="text" 
+                  value={selectedNode.data.mapping as string || ''}
+                  onChange={(e) => onUpdateNode(selectedNode.id, { mapping: e.target.value })}
+                  placeholder="e.g. first_name AS FirstName, dob AS DateOfBirth"
+                  className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors font-mono"
+                />
+              </div>
+            )}
+
+            {/* Breakpoint Toggle */}
+            <div className="flex flex-col gap-2 mt-4 pt-4 border-t border-border">
+              <label className="text-xs font-semibold text-text-h">Debugger Breakpoint</label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  checked={selectedNode.data.isBreakpoint as boolean || false}
+                  onChange={(e) => onUpdateNode(selectedNode.id, { isBreakpoint: e.target.checked })}
+                  className="w-4 h-4 rounded bg-code-bg border-border text-accent focus:ring-accent"
+                />
+                <span className="text-sm text-text-muted hover:text-text transition-colors">Pause execution after this node</span>
+              </label>
+            </div>
+
+            {['csvInput', 'jsonInput', 'parquetInput', 'excelInput', 'avroInput', 'orcInput', 'featherInput', 'fixedWidthInput', 'xmlInput', 'arrowInput'].includes(selectedNode.data.operation as string) && (
               <div className="flex flex-col gap-2">
                 <label className="text-xs font-semibold text-text-h">Uploaded Files</label>
                 <div className="flex flex-col gap-2 bg-code-bg p-2 rounded-md border border-border max-h-40 overflow-y-auto custom-scrollbar">
@@ -337,7 +411,7 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
               </div>
             )}
 
-            {selectedNode.data.operation === 'postgresInput' && (
+            {['postgresInput', 'mysqlInput', 'sqlserverInput', 'mongodbInput'].includes(selectedNode.data.operation as string) && (
               <>
                 <div className="flex flex-col gap-2">
                   <label className="text-xs font-semibold text-text-h">Connection String</label>
@@ -346,7 +420,7 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
                     value={selectedNode.data.connection_string as string || ''}
                     onChange={(e) => onUpdateNode(selectedNode.id, { connection_string: e.target.value })}
                     placeholder="postgresql://user:pass@localhost:5432/db"
-                    className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
+                    className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
                   />
                 </div>
                 <div className="flex flex-col gap-2">
@@ -356,10 +430,61 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
                     value={selectedNode.data.table as string || ''}
                     onChange={(e) => onUpdateNode(selectedNode.id, { table: e.target.value })}
                     placeholder="e.g. users"
-                    className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
+                    className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
                   />
                 </div>
               </>
+            )}
+
+            {['restApiInput', 'graphQLInput'].includes(selectedNode.data.operation as string) && (
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-semibold text-text-h">API Endpoint URL</label>
+                <input 
+                  type="text" 
+                  value={selectedNode.data.url as string || ''}
+                  onChange={(e) => onUpdateNode(selectedNode.id, { url: e.target.value })}
+                  placeholder="https://api.example.com/data"
+                  className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
+                />
+              </div>
+            )}
+
+            {selectedNode.data.operation === 'sqliteInput' && (
+              <>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">SQLite DB Path</label>
+                  <input 
+                    type="text" 
+                    value={selectedNode.data.db_path as string || ''}
+                    onChange={(e) => onUpdateNode(selectedNode.id, { db_path: e.target.value })}
+                    placeholder="/absolute/path/to/db.sqlite"
+                    className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">Table Name</label>
+                  <input 
+                    type="text" 
+                    value={selectedNode.data.table as string || ''}
+                    onChange={(e) => onUpdateNode(selectedNode.id, { table: e.target.value })}
+                    placeholder="e.g. users"
+                    className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
+                  />
+                </div>
+              </>
+            )}
+
+            {selectedNode.data.operation === 'duckdbInput' && (
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-semibold text-text-h">DuckDB File Path</label>
+                <input 
+                  type="text" 
+                  value={selectedNode.data.file as string || ''}
+                  onChange={(e) => onUpdateNode(selectedNode.id, { file: e.target.value })}
+                  placeholder="/absolute/path/to/data.duckdb"
+                  className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
+                />
+              </div>
             )}
 
             {selectedNode.data.operation === 'removeDuplicates' && (
@@ -403,7 +528,7 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
                     value={selectedNode.data.defaultVal as string || ''}
                     onChange={(e) => onUpdateNode(selectedNode.id, { defaultVal: e.target.value })}
                     placeholder="e.g. 0 or 'Unknown'"
-                    className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
+                    className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
                   />
                 </div>
               </>
@@ -418,7 +543,7 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
                     value={selectedNode.data.column as string || ''}
                     onChange={(e) => onUpdateNode(selectedNode.id, { column: e.target.value })}
                     placeholder="e.g. amount"
-                    className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
+                    className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
                   />
                 </div>
                 <div className="flex flex-col gap-2 mt-2">
@@ -522,7 +647,7 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
                   value={selectedNode.data.condition as string || ''}
                   onChange={(e) => onUpdateNode(selectedNode.id, { condition: e.target.value })}
                   placeholder="e.g. age > 18 AND status = 'active'"
-                  className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
+                  className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
                 />
               </div>
             )}
@@ -658,37 +783,61 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
               </div>
             )}
 
-            {selectedNode.data.operation === 'innerJoin' && (
+            {['innerJoin', 'leftJoin', 'fullOuterJoin', 'antiJoin', 'semiJoin'].includes(selectedNode.data.operation as string) && (
               <div className="flex flex-col gap-2">
-                <label className="text-xs font-semibold text-text-h">Join Condition</label>
+                <label className="text-xs font-semibold text-text-h">Join Condition ({selectedNode.data.operation as string})</label>
                 <input 
                   type="text" 
                   value={selectedNode.data.joinCondition as string || ''}
                   onChange={(e) => onUpdateNode(selectedNode.id, { joinCondition: e.target.value })}
                   placeholder="e.g. t1.id = t2.user_id"
-                  className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
+                  className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
                 />
-                <span className="text-[10px] text-text-muted">Note: Connect exactly two parent nodes.</span>
+                <span className="text-[10px] text-text-muted">Note: Connect two parent nodes.</span>
               </div>
             )}
 
-            {selectedNode.data.operation === 'leftJoin' && (
-              <div className="flex flex-col gap-2">
-                <label className="text-xs font-semibold text-text-h">Join Condition (Left Join)</label>
-                <input 
-                  type="text" 
-                  value={selectedNode.data.joinCondition as string || ''}
-                  onChange={(e) => onUpdateNode(selectedNode.id, { joinCondition: e.target.value })}
-                  placeholder="e.g. t1.id = t2.user_id"
-                  className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
-                />
-                <span className="text-[10px] text-text-muted">Note: Connect exactly two parent nodes.</span>
-              </div>
-            )}
-
-            {selectedNode.data.operation === 'unionAll' && (
+            {['unionAll', 'crossJoin', 'intersectNodes', 'exceptNodes'].includes(selectedNode.data.operation as string) && (
               <div className="p-3 bg-code-bg border border-border rounded-md text-xs text-text-muted">
-                This node vertically appends two tables together. Both incoming nodes must have identical columns. Connect exactly two parent nodes.
+                Combines two incoming parent tables using {selectedNode.data.operation as string}. Connect two parent nodes.
+              </div>
+            )}
+
+            {['rankRows', 'denseRankRows', 'percentRankRows'].includes(selectedNode.data.operation as string) && (
+              <>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">Partition By Column</label>
+                  <ColumnSelect value={selectedNode.data.partCol as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { partCol: val })} placeholder="e.g. department" />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">Order By Column</label>
+                  <ColumnSelect value={selectedNode.data.orderCol as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { orderCol: val })} placeholder="e.g. salary" />
+                </div>
+              </>
+            )}
+
+            {['leadRows', 'lagRows'].includes(selectedNode.data.operation as string) && (
+              <>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">Target Column</label>
+                  <ColumnSelect value={selectedNode.data.column as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { column: val })} placeholder="e.g. price" />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">Offset</label>
+                  <input 
+                    type="number" 
+                    value={selectedNode.data.offset as string || '1'} 
+                    onChange={(e) => onUpdateNode(selectedNode.id, { offset: e.target.value })}
+                    className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text"
+                  />
+                </div>
+              </>
+            )}
+
+            {selectedNode.data.operation === 'hashColumn' && (
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-semibold text-text-h">Column to Hash (MD5)</label>
+                <ColumnSelect value={selectedNode.data.column as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { column: val })} placeholder="e.g. email" />
               </div>
             )}
 
@@ -701,7 +850,7 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
                     value={selectedNode.data.groupCol as string || ''}
                     onChange={(e) => onUpdateNode(selectedNode.id, { groupCol: e.target.value })}
                     placeholder="e.g. department"
-                    className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
+                    className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
                   />
                 </div>
                 <div className="flex gap-2">
@@ -733,9 +882,92 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
                       value={selectedNode.data.aggCol as string || ''}
                       onChange={(e) => onUpdateNode(selectedNode.id, { aggCol: e.target.value })}
                       placeholder="e.g. salary"
-                      className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
+                      className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
                     />
                   </div>
+                </div>
+              </>
+            )}
+
+            {['medianAgg', 'modeAgg', 'stdDevAgg', 'varianceAgg'].includes(selectedNode.data.operation as string) && (
+              <>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">Group By Column</label>
+                  <input type="text" value={selectedNode.data.groupCol as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { groupCol: e.target.value })} placeholder="e.g. category" className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors" />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">Numeric Column</label>
+                  <input type="text" value={selectedNode.data.aggCol as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { aggCol: e.target.value })} placeholder="e.g. price" className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors" />
+                </div>
+              </>
+            )}
+
+            {selectedNode.data.operation === 'correlationMatrix' && (
+              <>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">Column 1</label>
+                  <input type="text" value={selectedNode.data.col1 as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { col1: e.target.value })} placeholder="e.g. age" className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors" />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">Column 2</label>
+                  <input type="text" value={selectedNode.data.col2 as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { col2: e.target.value })} placeholder="e.g. salary" className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors" />
+                </div>
+              </>
+            )}
+
+            {['movingAverage', 'runningTotal'].includes(selectedNode.data.operation as string) && (
+              <>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">Target Column (Numeric)</label>
+                  <input type="text" value={selectedNode.data.column as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { column: e.target.value })} placeholder="e.g. amount" className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors" />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">Partition By (Optional)</label>
+                  <input type="text" value={selectedNode.data.partCol as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { partCol: e.target.value })} placeholder="e.g. category" className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors" />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">Order By</label>
+                  <input type="text" value={selectedNode.data.orderCol as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { orderCol: e.target.value })} placeholder="e.g. date" className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors" />
+                </div>
+                {selectedNode.data.operation === 'movingAverage' && (
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs font-semibold text-text-h">Window Size (Rows)</label>
+                    <input type="number" value={selectedNode.data.window as string || '3'} onChange={(e) => onUpdateNode(selectedNode.id, { window: e.target.value })} className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors" />
+                  </div>
+                )}
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">New Column Name</label>
+                  <input type="text" value={selectedNode.data.newCol as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { newCol: e.target.value })} placeholder="e.g. moving_avg" className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors" />
+                </div>
+              </>
+            )}
+
+            {['normalizeColumn', 'standardizeColumn'].includes(selectedNode.data.operation as string) && (
+              <>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">Target Column</label>
+                  <input type="text" value={selectedNode.data.column as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { column: e.target.value })} placeholder="e.g. score" className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors" />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">New Column Name</label>
+                  <input type="text" value={selectedNode.data.newCol as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { newCol: e.target.value })} placeholder="e.g. norm_score" className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors" />
+                </div>
+              </>
+            )}
+
+            {selectedNode.data.operation === 'regexMatch' && (
+              <>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">Target Column</label>
+                  <input type="text" value={selectedNode.data.column as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { column: e.target.value })} placeholder="e.g. email" className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors" />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">Regex Pattern</label>
+                  <input type="text" value={selectedNode.data.pattern as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { pattern: e.target.value })} placeholder="e.g. ^[a-z]+$" className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors" />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">New Column Name (Boolean)</label>
+                  <input type="text" value={selectedNode.data.newCol as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { newCol: e.target.value })} placeholder="e.g. is_valid" className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors" />
                 </div>
               </>
             )}
@@ -882,7 +1114,7 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
                   value={selectedNode.data.file as string || ''}
                   onChange={(e) => onUpdateNode(selectedNode.id, { file: e.target.value })}
                   placeholder="e.g. output/results.csv"
-                  className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
+                  className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
                 />
               </div>
             )}

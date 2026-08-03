@@ -85,9 +85,9 @@ export async function POST(req: Request) {
 
     // Step 2: Execute the DAG sequentially in topological order
     for (const nodeId of sortedNodes) {
+      const nodeStart = Date.now();
       finalNodeId = nodeId;
-      const sql = nodeMap[nodeId];
-      if (!sql || sql === "SELECT 'Disconnected' AS status") continue;
+      let sql = nodeMap[nodeId] || "SELECT 'Disconnected' AS status";
       
       const { generateNodeHash, getCacheFilePath, isEncryptedCached, getEncryptedCacheFilePath } = await import('@/lib/cachingEngine');
       const { encryptFile, decryptFile } = await import('@/lib/encryption');
@@ -203,14 +203,44 @@ export async function POST(req: Request) {
     const duration = endTime - startTime;
     logs.push(`[${new Date().toISOString()}] Pipeline completed in ${duration}ms`);
 
-    return NextResponse.json({ 
+    // Generate Explain Plan
+    let explainPlanText = '';
+    try {
+      const explainResult = await new Promise<any[]>((resolve, reject) => {
+        conn.all(`EXPLAIN SELECT * FROM ${finalSafeName}`, (err: any, res: any) => {
+          if (err) reject(err);
+          else resolve(res);
+        });
+      });
+      explainPlanText = explainResult.map((row: any) => Object.values(row).join(' ')).join('\n');
+    } catch (e) {
+      explainPlanText = 'Failed to generate explain plan.';
+    }
+
+    // Get column metadata for the output
+    let columns: any[] = [];
+    try {
+      const colResult = await new Promise<any[]>((resolve, reject) => {
+        conn.all(`DESCRIBE ${finalSafeName}`, (err: any, res: any) => {
+          if (err) reject(err);
+          else resolve(res);
+        });
+      });
+      columns = colResult.map((row: any) => ({ name: row.column_name, type: row.column_type }));
+    } catch (e) {}
+
+    const serializeObj = (obj: any) => JSON.parse(JSON.stringify(obj, (k, v) => typeof v === 'bigint' ? Number(v) : v));
+    
+    return NextResponse.json(serializeObj({ 
       success: true, 
       message: "Pipeline executed successfully.",
-      metadata: { row_count: result.length, memory_limit: "384MB", threads: 1, duration_ms: duration },
+      metadata: { row_count: result.length, column_count: columns.length, columns, memory_limit: "384MB", threads: 1, duration_ms: duration },
       sample_result: result,
-      logs: logs.join('\n'),
+      final_sql: nodeMap[finalNodeId] || '',
+      logs: logs,
+      explain_plan: explainPlanText,
       download_url: `/api/download?file=${outputFilename}`
-    });
+    }));
 
   } catch (error: any) {
     console.error("API Error:", error);

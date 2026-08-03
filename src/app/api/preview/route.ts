@@ -78,8 +78,7 @@ export async function POST(req: Request) {
     for (const nodeId of sortedNodes) {
       if (!upstreamNodes.has(nodeId)) continue;
       
-      const sql = nodeMap[nodeId];
-      if (!sql || sql === "SELECT 'Disconnected' AS status") continue;
+      let sql = nodeMap[nodeId] || "SELECT 'Disconnected' AS status";
       
       const { decryptSqlPaths } = await import('@/lib/decryptSqlPaths');
       const { modifiedSql, tempFiles } = decryptSqlPaths(sql);
@@ -130,13 +129,14 @@ export async function POST(req: Request) {
     
     const columns = schema.map(col => ({ name: col.column_name, type: col.column_type }));
 
-    return NextResponse.json({ 
+    const serializeObj = (obj: any) => JSON.parse(JSON.stringify(obj, (k, v) => typeof v === 'bigint' ? Number(v) : v));
+    return NextResponse.json(serializeObj({ 
       success: true, 
       preview: {
         columns,
         sample_data: result
       }
-    });
+    }));
 
   } catch (error: any) {
     return NextResponse.json({ error: error.message || "Failed to generate preview." }, { status: 500 });

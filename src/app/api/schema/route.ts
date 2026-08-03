@@ -85,8 +85,7 @@ export async function POST(req: Request) {
     for (const nodeId of sortedNodes) {
       if (!upstreamNodes.has(nodeId)) continue;
       
-      const sql = nodeMap[nodeId];
-      if (!sql || sql === "SELECT 'Disconnected' AS status") continue;
+      let sql = nodeMap[nodeId] || "SELECT 'Disconnected' AS status";
       
       const { decryptSqlPaths } = await import('@/lib/decryptSqlPaths');
       const { modifiedSql, tempFiles } = decryptSqlPaths(sql);
@@ -130,7 +129,6 @@ export async function POST(req: Request) {
       combinedSchema = [...combinedSchema, ...schema.map(col => ({ name: col.column_name, type: col.column_type }))];
     }
     
-    // Deduplicate
     const uniqueSchema = combinedSchema.filter((v, i, a) => a.findIndex(t => (t.name === v.name)) === i);
 
     conn.close();

@@ -29,6 +29,15 @@ db.exec(`
     metadata TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+
+  CREATE TABLE IF NOT EXISTS execution_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    pipeline_name TEXT,
+    status TEXT NOT NULL,
+    duration_ms INTEGER,
+    node_count INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
 `);
 
 export default db;
