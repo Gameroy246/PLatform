@@ -21,7 +21,7 @@ const OP_ACCENT: Record<string, string> = {
   exportCsv: '#22c55e', exportParquet: '#22c55e', exportJson: '#22c55e',
 };
 
-export default function TransformNode({ data }: { data: any }) {
+export default function TransformNode({ data, selected }: { data: any, selected?: boolean }) {
   const isCleaning = ['removeNulls', 'removeDuplicates', 'fillMissing', 'typeConversion', 'trimWhitespace',
     'textCasing', 'replaceText', 'regexExtract', 'dropColumns', 'renameColumn'].includes(data.operation);
   const isAgg = ['groupBy', 'windowFunction', 'pivotTable', 'unpivotTable', 'rollup', 'summaryStats'].includes(data.operation);
@@ -34,17 +34,23 @@ export default function TransformNode({ data }: { data: any }) {
     <div
       style={{
         background: data.color || 'var(--bg)',
-        border: `1px solid var(--border)`,
+        border: selected ? `2px solid ${accentColor}` : `1px solid var(--border)`,
         borderRadius: 8,
         padding: '16px',
         minWidth: 220,
-        boxShadow: 'var(--node-shadow)',
+        boxShadow: selected ? `0 0 0 4px ${accentColor}33, var(--node-shadow)` : 'var(--node-shadow)',
         position: 'relative',
         display: 'flex',
         flexDirection: 'column',
-        gap: '12px'
+        gap: '12px',
+        transition: 'all 0.2s ease-in-out'
       }}
     >
+      {selected && (
+        <div className="absolute -top-3 -right-3 bg-accent text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-glow animate-pulse">
+          Inspecting
+        </div>
+      )}
       {/* Input handle */}
       <Handle id="target" type="target" position={Position.Left} />
 

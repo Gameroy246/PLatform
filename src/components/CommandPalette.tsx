@@ -11,7 +11,15 @@ interface CommandPaletteProps {
 export default function CommandPalette({ onAddNode, onRunPipeline, onOpenVariables }: CommandPaletteProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [macros, setMacros] = useState<any[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('ARCHITECT_MACROS') || '[]');
+      setMacros(stored);
+    } catch {}
+  }, [isOpen]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -115,6 +123,11 @@ export default function CommandPalette({ onAddNode, onRunPipeline, onOpenVariabl
     { name: 'Add Node: Custom SQL', icon: Plus, action: () => onAddNode('transform', 'customSql') },
     
     { name: 'Variables & Settings', icon: Settings, action: () => onOpenVariables && onOpenVariables() },
+    ...macros.map(m => ({
+      name: `Add Snippet: ${m.name}`,
+      icon: Plus,
+      action: () => onAddNode('macro', m.id)
+    }))
   ];
 
   const filteredCommands = commands.filter((c) =>

@@ -2,7 +2,7 @@
 import { Handle, Position } from '@xyflow/react';
 import { Database, AlertTriangle } from 'lucide-react';
 
-export default function DataSourceNode({ data }: { data: any }) {
+export default function DataSourceNode({ data, selected }: { data: any, selected?: boolean }) {
   const isMissingFile = ['csvInput', 'jsonInput', 'parquetInput'].includes(data.operation) && !data.file;
 
   const displayLabel = (() => {
@@ -15,21 +15,29 @@ export default function DataSourceNode({ data }: { data: any }) {
     return typeof data.file === 'string' ? data.file.split(/[/\\]/).pop() : 'Select a file…';
   })();
 
+  const accentColor = '#6366f1'; // Indigo for Data Sources
+
   return (
     <div
       style={{
         background: data.color || 'var(--bg)',
-        border: `1px solid ${isMissingFile ? '#ef4444' : 'var(--border)'}`,
+        border: selected ? `2px solid ${accentColor}` : `1px solid ${isMissingFile ? '#ef4444' : 'var(--border)'}`,
         borderRadius: 8,
         padding: '16px',
         minWidth: 220,
-        boxShadow: 'var(--node-shadow)',
+        boxShadow: selected ? `0 0 0 4px ${accentColor}33, var(--node-shadow)` : 'var(--node-shadow)',
         position: 'relative',
         display: 'flex',
         flexDirection: 'column',
-        gap: '12px'
+        gap: '12px',
+        transition: 'all 0.2s ease-in-out'
       }}
     >
+      {selected && (
+        <div className="absolute -top-3 -right-3 bg-accent text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-glow animate-pulse">
+          Inspecting
+        </div>
+      )}
       {/* Header Row */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
         <div style={{ 

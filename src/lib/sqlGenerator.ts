@@ -342,3 +342,70 @@ export function generateNodeSQL(node: any, edges: any[]): string {
   }
   return generatedSql;
 }
+
+export function generateProductionSQL(nodes: any[], edges: any[]): string {
+  if (!nodes || nodes.length === 0) return '-- No nodes in pipeline';
+  
+  const inDegree: Record<string, number> = {};
+  const adjList: Record<string, string[]> = {};
+  
+  nodes.forEach(n => {
+    inDegree[n.id] = 0;
+    adjList[n.id] = [];
+  });
+  
+  edges.forEach(e => {
+    if (adjList[e.source] && inDegree[e.target] !== undefined) {
+      adjList[e.source].push(e.target);
+      inDegree[e.target]++;
+    }
+  });
+  
+  const queue: string[] = [];
+  Object.keys(inDegree).forEach(id => {
+    if (inDegree[id] === 0) queue.push(id);
+  });
+  
+  const sortedNodes: string[] = [];
+  while (queue.length > 0) {
+    const curr = queue.shift()!;
+    sortedNodes.push(curr);
+    adjList[curr]?.forEach(neighbor => {
+      inDegree[neighbor]--;
+      if (inDegree[neighbor] === 0) queue.push(neighbor);
+    });
+  }
+  
+  if (sortedNodes.length !== nodes.length) {
+    return '-- Error: Circular dependency detected in pipeline';
+  }
+  
+  let sql = 'WITH ';
+  const cteParts: string[] = [];
+  
+  for (let i = 0; i < sortedNodes.length; i++) {
+    const nodeId = sortedNodes[i];
+    const node = nodes.find(n => n.id === nodeId);
+    if (!node) continue;
+    
+    let rawNodeSql = generateNodeSQL(node, edges);
+    const safeNodeName = `node_${nodeId.replace(/-/g, '_')}`;
+    
+    // Split for dataQuality nodes
+    const parts = rawNodeSql.split('___LDA_DATA_QUALITY_SPLIT___');
+    
+    cteParts.push(`${safeNodeName} AS (\n  ${parts[0]}\n)`);
+    
+    if (parts.length > 1) {
+      cteParts.push(`${safeNodeName}_error AS (\n  ${parts[1]}\n)`);
+    }
+  }
+  
+  sql += cteParts.join(',\n\n');
+  
+  const lastNodeId = sortedNodes[sortedNodes.length - 1];
+  const lastSafeName = `node_${lastNodeId.replace(/-/g, '_')}`;
+  
+  sql += `\n\nSELECT * FROM ${lastSafeName};\n`;
+  return sql;
+}

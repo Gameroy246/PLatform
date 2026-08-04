@@ -129,6 +129,13 @@ export async function POST(req: Request) {
       });
     });
 
+    const summarize = await new Promise<any[]>((resolve, reject) => {
+      conn.all(`SUMMARIZE ${targetSafeName}`, (err: any, res: any) => {
+        if (err) resolve([]);
+        else resolve(res);
+      });
+    });
+
     conn.close();
     
     try {
@@ -143,7 +150,8 @@ export async function POST(req: Request) {
       success: true, 
       preview: {
         columns,
-        sample_data: result
+        sample_data: result,
+        summary: summarize
       }
     }));
 

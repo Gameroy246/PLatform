@@ -5,7 +5,7 @@ import axios from 'axios';
 import { ReactFlow, MiniMap, Controls, Background, BackgroundVariant, useReactFlow } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { useRef } from 'react';
-import { Play, Database, ChevronDown, ChevronRight, FileInput, Filter, Calculator, ArrowRightLeft, FolderOutput, Sun, Moon, Star, Save, Download, FolderOpen } from 'lucide-react';
+import { Play, Database, ChevronDown, ChevronRight, FileInput, Filter, Calculator, ArrowRightLeft, FolderOutput, Sun, Moon, Star, Save, Download, FolderOpen, Code } from 'lucide-react';
 import dynamic from 'next/dynamic';
 const Editor = dynamic(() => import('@monaco-editor/react'), { ssr: false });
 import { useStore } from '../store';
@@ -16,7 +16,7 @@ import PropertiesPanel from './PropertiesPanel';
 import CommandPalette from './CommandPalette';
 import Dashboard from './Dashboard';
 import { useEffect } from 'react';
-import { generateNodeSQL } from '../lib/sqlGenerator';
+import { generateNodeSQL, generateProductionSQL } from '../lib/sqlGenerator';
 import HistoryViewer from './HistoryViewer';
 import WelcomeModal from './WelcomeModal';
 import AuditLogs from './AuditLogs';
@@ -280,7 +280,7 @@ export default function Canvas() {
   const [isResizingPanel, setIsResizingPanel] = useState(false);
   const [isResizingConsole, setIsResizingConsole] = useState(false);
   
-  const [activeConsoleTab, setActiveConsoleTab] = useState<'output' | 'input' | 'sql' | 'dashboard' | 'logs'>('output');
+  const [activeConsoleTab, setActiveConsoleTab] = useState<'output' | 'input' | 'sql' | 'dashboard' | 'logs' | 'dbt'>('output');
   const [sidebarSearch, setSidebarSearch] = useState('');
   const [macros, setMacros] = useState<any[]>([]);
 
@@ -466,6 +466,7 @@ export default function Canvas() {
         const res = await axios.post('/api/preview', payload, { signal: abortController.signal });
         if (res.data?.preview?.sample_data) {
            setPreviewData(res.data.preview.sample_data);
+           setPipelineMetadata({ columns: res.data.preview.columns, summary: res.data.preview.summary });
         }
         
         // Fetch input preview (from first parent) — only if output succeeded
@@ -1082,7 +1083,7 @@ export default function Canvas() {
             onClick={() => setActiveConsoleTab('output')}
             className={`px-4 py-2 text-sm font-medium transition-colors border-r border-border ${activeConsoleTab === 'output' ? 'text-accent bg-code-bg border-b-2 border-b-accent' : 'text-text-muted hover:text-text hover:bg-code-bg/50'}`}
           >
-            Output Preview
+            {selectedNode ? <span className="flex items-center gap-2">Output Preview <span className="text-[10px] bg-accent/20 text-accent px-1.5 py-0.5 rounded-full">{String(selectedNode.data?.operation || 'Node')}</span></span> : 'Output Preview'}
           </button>
           <button 
             onClick={() => { setActiveConsoleTab('input'); fetchInputPreview(); }}
@@ -1122,15 +1123,47 @@ export default function Canvas() {
           </button>
           <button 
             onClick={() => setActiveConsoleTab('audit' as any)}
-            className={`px-4 py-2 text-sm font-medium transition-colors ${activeConsoleTab === ('audit' as any) ? 'text-accent border-b-2 border-accent' : 'text-text-muted hover:text-text hover:bg-code-bg/50'}`}
+            className={`px-4 py-2 text-sm font-medium transition-colors border-r border-border ${activeConsoleTab === ('audit' as any) ? 'text-accent border-b-2 border-accent' : 'text-text-muted hover:text-text hover:bg-code-bg/50'}`}
           >
             Audit Logs
+          </button>
+          <button 
+            onClick={() => setActiveConsoleTab('dbt')}
+            className={`px-4 py-2 text-sm font-medium transition-colors ${activeConsoleTab === 'dbt' ? 'text-accent border-b-2 border-accent' : 'text-text-muted hover:text-text hover:bg-code-bg/50'}`}
+          >
+                <span className="flex items-center gap-2"><Code className="w-4 h-4" /> Production SQL (dbt)</span>
           </button>
         </div>
         
         {/* FIXED: Dynamic Content Area */}
         <div className="flex-1 overflow-auto bg-bg">
           {activeConsoleTab === 'sql' && (
+            <div className="p-4 h-full bg-code-bg relative group">
+              <pre className="text-sm font-mono text-text whitespace-pre-wrap">
+                {selectedNode ? generateNodeSQL(selectedNode, edges) : "-- Select a node to view its generated SQL"}
+              </pre>
+            </div>
+          )}
+          {activeConsoleTab === 'dbt' && (
+            <div className="p-4 h-full bg-code-bg relative group flex flex-col">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-xs text-text-muted">Auto-compiled CTE for production (Snowflake, BigQuery, dbt)</span>
+                <button 
+                  onClick={() => {
+                    navigator.clipboard.writeText(generateProductionSQL(nodes, edges));
+                    showToast("Production SQL copied to clipboard", "success");
+                  }}
+                  className="px-3 py-1 bg-accent/20 text-accent rounded text-xs font-medium hover:bg-accent/30 transition-colors"
+                >
+                  Copy SQL
+                </button>
+              </div>
+              <pre className="text-xs font-mono text-text whitespace-pre-wrap bg-bg p-4 rounded-lg border border-border flex-1 overflow-auto">
+                {generateProductionSQL(nodes, edges)}
+              </pre>
+            </div>
+          )}
+          {activeConsoleTab === 'sql_full' && (
             <Editor
               height="100%"
               defaultLanguage="sql"
@@ -1175,16 +1208,29 @@ export default function Canvas() {
                     <table className="w-full text-left text-sm text-text border-collapse">
                       <thead className="text-text-h border-b border-border bg-bg sticky top-0">
                         <tr>
-                          {Object.keys(previewData[0]).map((key) => (
-                            <th key={key} className="p-2 whitespace-nowrap">
-                              {key}
-                              {pipelineMetadata?.columns && (
-                                <span className="ml-2 text-xs text-text-muted font-normal lowercase">
-                                  {pipelineMetadata.columns.find((c: any) => c.name === key)?.type}
-                                </span>
-                              )}
-                            </th>
-                          ))}
+                          {Object.keys(previewData[0]).map((key) => {
+                            const summaryData = pipelineMetadata?.summary?.find((s: any) => s.column_name === key);
+                            return (
+                              <th key={key} className="p-2 whitespace-nowrap min-w-[120px] align-top">
+                                <div className="flex items-center">
+                                  {key}
+                                  {pipelineMetadata?.columns && (
+                                    <span className="ml-2 text-[10px] text-text-muted font-normal lowercase bg-code-bg px-1 rounded">
+                                      {pipelineMetadata.columns.find((c: any) => c.name === key)?.type}
+                                    </span>
+                                  )}
+                                </div>
+                                {summaryData && (
+                                  <div className="mt-1 flex flex-col gap-0.5 text-[10px] text-text-muted font-normal border-t border-border pt-1">
+                                    <div className="flex justify-between"><span>Nulls:</span> <span>{summaryData.null_percentage}%</span></div>
+                                    <div className="flex justify-between"><span>Unique:</span> <span>{summaryData.approx_unique}</span></div>
+                                    <div className="flex justify-between"><span>Min:</span> <span className="truncate max-w-[60px]" title={summaryData.min}>{summaryData.min || '-'}</span></div>
+                                    <div className="flex justify-between"><span>Max:</span> <span className="truncate max-w-[60px]" title={summaryData.max}>{summaryData.max || '-'}</span></div>
+                                  </div>
+                                )}
+                              </th>
+                            );
+                          })}
                         </tr>
                       </thead>
                       <tbody>
