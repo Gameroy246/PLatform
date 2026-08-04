@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useRef } from 'react';
-import { Search, Plus, Play, Settings } from 'lucide-react';
+import { Search, Plus, GitMerge, Settings, Play } from 'lucide-react';
 
 interface CommandPaletteProps {
   onAddNode: (type: string, operation: string) => void;
@@ -11,7 +11,15 @@ interface CommandPaletteProps {
 export default function CommandPalette({ onAddNode, onRunPipeline, onOpenVariables }: CommandPaletteProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [macros, setMacros] = useState<any[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('ARCHITECT_MACROS') || '[]');
+      setMacros(stored);
+    } catch {}
+  }, [isOpen]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -46,6 +54,19 @@ export default function CommandPalette({ onAddNode, onRunPipeline, onOpenVariabl
     { name: 'Add Node: Parquet Input', icon: Plus, action: () => onAddNode('dataSource', 'parquetInput') },
     { name: 'Add Node: Excel Input', icon: Plus, action: () => onAddNode('dataSource', 'excelInput') },
     { name: 'Add Node: PostgreSQL Input', icon: Plus, action: () => onAddNode('dataSource', 'postgresInput') },
+    { name: 'Add Node: MySQL Input', icon: Plus, action: () => onAddNode('dataSource', 'mysqlInput') },
+    { name: 'Add Node: SQL Server Input', icon: Plus, action: () => onAddNode('dataSource', 'sqlserverInput') },
+    { name: 'Add Node: MongoDB Input', icon: Plus, action: () => onAddNode('dataSource', 'mongodbInput') },
+    { name: 'Add Node: Arrow Input', icon: Plus, action: () => onAddNode('dataSource', 'arrowInput') },
+    { name: 'Add Node: REST API', icon: Plus, action: () => onAddNode('dataSource', 'restApiInput') },
+    { name: 'Add Node: GraphQL', icon: Plus, action: () => onAddNode('dataSource', 'graphQLInput') },
+    { name: 'Add Node: XML Input', icon: Plus, action: () => onAddNode('dataSource', 'xmlInput') },
+    { name: 'Add Node: Avro Input', icon: Plus, action: () => onAddNode('dataSource', 'avroInput') },
+    { name: 'Add Node: ORC Input', icon: Plus, action: () => onAddNode('dataSource', 'orcInput') },
+    { name: 'Add Node: Feather Input', icon: Plus, action: () => onAddNode('dataSource', 'featherInput') },
+    { name: 'Add Node: Fixed Width Input', icon: Plus, action: () => onAddNode('dataSource', 'fixedWidthInput') },
+    { name: 'Add Node: SQLite Input', icon: Plus, action: () => onAddNode('dataSource', 'sqliteInput') },
+    { name: 'Add Node: DuckDB Input', icon: Plus, action: () => onAddNode('dataSource', 'duckdbInput') },
     
     { name: 'Add Node: Remove Duplicates', icon: Plus, action: () => onAddNode('transform', 'removeDuplicates') },
     { name: 'Add Node: Remove Nulls', icon: Plus, action: () => onAddNode('transform', 'removeNulls') },
@@ -68,9 +89,10 @@ export default function CommandPalette({ onAddNode, onRunPipeline, onOpenVariabl
     { name: 'Add Node: Split Part', icon: Plus, action: () => onAddNode('transform', 'splitPart') },
     { name: 'Add Node: String Length', icon: Plus, action: () => onAddNode('transform', 'stringLength') },
     
-    { name: 'Add Node: Inner Join', icon: Plus, action: () => onAddNode('transform', 'innerJoin') },
-    { name: 'Add Node: Left Join', icon: Plus, action: () => onAddNode('transform', 'leftJoin') },
-    { name: 'Add Node: Union All', icon: Plus, action: () => onAddNode('transform', 'unionAll') },
+    { name: 'Add Node: Inner Join', icon: GitMerge, action: () => onAddNode('transform', 'innerJoin') },
+    { name: 'Add Node: Left Join', icon: GitMerge, action: () => onAddNode('transform', 'leftJoin') },
+    { name: 'Add Node: Self Join', icon: GitMerge, action: () => onAddNode('transform', 'selfJoin') },
+    { name: 'Add Node: Union All', icon: GitMerge, action: () => onAddNode('transform', 'unionAll') },
     
     { name: 'Add Node: Group By', icon: Plus, action: () => onAddNode('transform', 'groupBy') },
     { name: 'Add Node: Window Function', icon: Plus, action: () => onAddNode('transform', 'windowFunction') },
@@ -78,6 +100,20 @@ export default function CommandPalette({ onAddNode, onRunPipeline, onOpenVariabl
     { name: 'Add Node: Unpivot/Melt', icon: Plus, action: () => onAddNode('transform', 'unpivotTable') },
     { name: 'Add Node: Rollup', icon: Plus, action: () => onAddNode('transform', 'rollup') },
     { name: 'Add Node: Summary Stats', icon: Plus, action: () => onAddNode('transform', 'summaryStats') },
+    { name: 'Add Node: Median', icon: Plus, action: () => onAddNode('transform', 'medianAgg') },
+    { name: 'Add Node: Mode', icon: Plus, action: () => onAddNode('transform', 'modeAgg') },
+    { name: 'Add Node: Std Dev', icon: Plus, action: () => onAddNode('transform', 'stdDevAgg') },
+    { name: 'Add Node: Variance', icon: Plus, action: () => onAddNode('transform', 'varianceAgg') },
+    { name: 'Add Node: Correlation Matrix', icon: GitMerge, action: () => onAddNode('transform', 'correlationMatrix') },
+    
+    { name: 'Add Node: Data Contract', icon: Settings, action: () => onAddNode('transform', 'dataContract') },
+    { name: 'Add Node: Auto Column Map', icon: Settings, action: () => onAddNode('transform', 'autoMap') },
+    
+    { name: 'Add Node: Moving Average', icon: Plus, action: () => onAddNode('transform', 'movingAverage') },
+    { name: 'Add Node: Running Total', icon: Plus, action: () => onAddNode('transform', 'runningTotal') },
+    { name: 'Add Node: Normalize', icon: Plus, action: () => onAddNode('transform', 'normalizeColumn') },
+    { name: 'Add Node: Standardize', icon: Plus, action: () => onAddNode('transform', 'standardizeColumn') },
+    { name: 'Add Node: Regex Match', icon: Plus, action: () => onAddNode('transform', 'regexMatch') },
     
     { name: 'Add Node: Math Formula', icon: Plus, action: () => onAddNode('transform', 'mathFormula') },
     { name: 'Add Node: Extract Year', icon: Plus, action: () => onAddNode('transform', 'extractYear') },
@@ -85,9 +121,13 @@ export default function CommandPalette({ onAddNode, onRunPipeline, onOpenVariabl
     { name: 'Add Node: Export CSV', icon: Plus, action: () => onAddNode('transform', 'exportCsv') },
     
     { name: 'Add Node: Custom SQL', icon: Plus, action: () => onAddNode('transform', 'customSql') },
-    { name: 'Add Node: AI Transform', icon: Plus, action: () => onAddNode('transform', 'aiTransform') },
     
     { name: 'Variables & Settings', icon: Settings, action: () => onOpenVariables && onOpenVariables() },
+    ...macros.map(m => ({
+      name: `Add Snippet: ${m.name}`,
+      icon: Plus,
+      action: () => onAddNode('macro', m.id)
+    }))
   ];
 
   const filteredCommands = commands.filter((c) =>

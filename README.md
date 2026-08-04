@@ -1,18 +1,20 @@
-# Data Architect(In Progress)
+<div align="center">
+  <h1>Local Data Architect </h1>
+  <p><b>Enterprise-grade, local-first visual SQL pipeline builder powered by DuckDB and Next.js.</b></p>
+</div>
 
-A local-first, visual SQL pipeline builder powered by **DuckDB** and **Next.js**. 
+<br />
 
-I built Data Architect to solve a simple problem: I hate writing boilerplate SQL for basic data transformations, but I also hate uploading my sensitive datasets to cloud SaaS platforms. This tool gives you the power of a modern data engineering pipeline (joins, aggregations, type casting, filtering) entirely in your browser, running locally on your own machine.
+Local Data Architect solves a critical enterprise problem: building robust data transformations without exposing sensitive datasets to cloud SaaS platforms. This tool gives you the power of a modern data engineering pipeline (joins, aggregations, data quality monitoring, profiling) entirely in your browser, running strictly on your local machine.
 
-## Features
+##  Enterprise Features (V3)
 
-- **Blazing Fast Local Execution:** Runs entirely on your local machine using the native Node DuckDB engine. No cloud servers, no data privacy issues. It safely processes massive datasets by leveraging DuckDB's disk-spilling architecture within a 512MB RAM constraint.
-- **Visual Node DAG:** Drag-and-drop interface powered by React Flow. Visually connect Data Sources to Transformations and watch your data flow.
-- **Dynamic Schema Awareness:** As you build your pipeline, the backend continually evaluates your sub-graphs. Click on any node, and the UI will automatically populate dropdowns with the exact columns and data types available at that specific moment in the pipeline.
-- **Dynamic Row Value Extraction:** Need to filter rows where `status = 'active'`? Don't type it out. The UI automatically queries DuckDB for a sample of the unique values in your column and gives you a dropdown to select from. 100% foolproof.
-- **Excel Resurrection:** Safely parses heavy `.xlsx` files during upload and silently streams them into lightning-fast CSVs on disk so DuckDB can process them instantly without memory crashes.
-- **Multi-File Arrays:** Upload 10 CSVs into a single node. The engine automatically handles array syntax (`read_csv_auto(['a.csv', 'b.csv'])`) to seamlessly union your data.
-- **Format Exporter:** Export your final pipeline results to **CSV**, **JSON**, or **Parquet** on the fly.
+- **AES-256-GCM Encryption at Rest:** Any file uploaded to the application is immediately encrypted on disk using AES-256-GCM. Decryption only occurs ephemerally in-memory during DuckDB execution.
+- **Blazing Fast Local Execution:** Runs natively on your local machine using the Node DuckDB engine. It safely processes massive datasets by leveraging DuckDB's disk-spilling architecture strictly capped at a 384MB memory limit.
+- **DuckDB Profiling Engine:** Select any node to instantly view statistical data profiles generated via DuckDB's `SUMMARIZE` functionality (min, max, null percentages, distinct counts).
+- **Cryptographic Split Streams:** The Data Quality node implements cryptographic delimiter strings (`___LDA_DATA_QUALITY_SPLIT___`) to securely split valid and invalid data streams without risk of SQL injection.
+- **Topological DAG Safety:** Advanced graph algorithms strictly enforce acyclic structures. If a circular dependency is detected, the engine halts the graph securely without server crashes.
+- **Linear-Style UI:** Beautiful, minimalist UI leveraging `zinc` palettes, refined typography (Inter font), and sleek structural cards.
 
 ## Getting Started
 
@@ -24,8 +26,8 @@ I built Data Architect to solve a simple problem: I hate writing boilerplate SQL
 
 1. Clone the repository
 ```bash
-git clone https://github.com/yourusername/Architect.git
-cd Architect
+git clone https://github.com/Gameroy246/PLatform.git
+cd PLatform
 ```
 
 2. Install dependencies
@@ -40,25 +42,20 @@ npm run dev
 
 4. Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-## Architecture Overview
+##  Architecture Overview
 
 The system operates in a stateless, reactive loop:
-1. **The Canvas (`React Flow`)** manages the Directed Acyclic Graph (DAG) state.
-2. **The Schema Engine (`/api/schema`)** topologically sorts the graph and evaluates all upstream parents to resolve exact column types dynamically for the properties panel.
-3. **The Value Engine (`/api/values`)** runs `SELECT DISTINCT` on upstream nodes to populate filter dropdowns with actual data.
-4. **The Execution Engine (`/api/run`)** compiles the final graph into nested `CREATE TEMP TABLE` DuckDB statements and executes them sequentially.
+1. **The Canvas (`React Flow`)** manages the Directed Acyclic Graph (DAG) state and auto-saves to a local SQLite vault.
+2. **The Schema Engine (`/api/schema`)** topologically sorts the graph and evaluates all upstream parents to resolve exact column types.
+3. **The Profiling Engine (`/api/profile`)** dynamically runs `SUMMARIZE` to display rich data health metrics.
+4. **The Execution Engine (`/api/run`)** compiles the final graph into nested `CREATE TEMP TABLE` DuckDB statements, seamlessly decrypts data on the fly, and executes sequentially.
 
-## Built With
+##  Contributing
 
-- [Next.js](https://nextjs.org/) (App Router)
-- [DuckDB](https://duckdb.org/) (Node.js API)
-- [React Flow](https://reactflow.dev/) (Visual DAG)
-- [Lucide React](https://lucide.dev/) (Icons)
-- [Tailwind CSS](https://tailwindcss.com/) (Styling)
-- [XLSX](https://sheetjs.com/) (Excel conversion)
+We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) and [Code of Conduct](CODE_OF_CONDUCT.md). 
 
-## Contributing
-Feel free to open issues or submit pull requests. If you want to add a new Transformation Node, check out the `generateSQL` function inside `Canvas.tsx` to see how the queries are compiled. Feel free to report any bugs
+For bugs or feature requests, use the GitHub issue templates provided.
 
-## License
-This project is licensed under the MIT License - see the LICENSE file for details.
+## 📝 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

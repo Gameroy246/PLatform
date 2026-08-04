@@ -1,25 +1,32 @@
 "use client";
 import { useState, useRef, useEffect } from 'react';
 import type { Node, Edge } from '@xyflow/react';
-import Editor from '@monaco-editor/react';
+import dynamic from 'next/dynamic';
+const Editor = dynamic(() => import('@monaco-editor/react'), { ssr: false });
 import axios from 'axios';
-import { FolderOpen, Settings2, Trash2, ArrowRight, ArrowDownRight } from 'lucide-react';
+import { FolderOpen, Settings2, Trash2, ArrowRight, ArrowDownRight, Star } from 'lucide-react';
+import DataPreviewModal from './DataPreviewModal';
+import { generateNodeSQL } from '../lib/sqlGenerator';
+import { useStore } from '../store';
 
 interface PropertiesPanelProps {
   selectedNode: Node | null;
   onUpdateNode: (id: string, data: any) => void;
-  onAIGenerate?: (id: string, prompt: string) => Promise<void>;
   nodes?: Node[];
   edges?: Edge[];
 }
 
-export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenerate, nodes = [], edges = [] }: PropertiesPanelProps) {
+export default function PropertiesPanel({ selectedNode, onUpdateNode, nodes = [], edges = [] }: PropertiesPanelProps) {
+  const { favorites, addFavorite, removeFavorite } = useStore();
   const [activeTab, setActiveTab] = useState<'settings' | 'description' | 'metadata'>('settings');
+  const [previewStreamMode, setPreviewStreamMode] = useState<'success' | 'error'>('success');
   const [isBrowsing, setIsBrowsing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [previewData, setPreviewData] = useState<any>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState('');
+  const [profileData, setProfileData] = useState<any>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
   
   const [realtimeSchema, setRealtimeSchema] = useState<{name: string, type: string}[]>([]);
   const [schemaLoading, setSchemaLoading] = useState(false);
@@ -44,7 +51,8 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
     const fetchSchema = async () => {
       setSchemaLoading(true);
       try {
-        const payload = { nodes, edges, targetNodeId: selectedNode.id };
+        const mappedNodes = nodes.map(n => ({ ...n, sql: generateNodeSQL(n, edges) }));
+        const payload = { nodes: mappedNodes, edges, targetNodeId: selectedNode.id };
         const res = await axios.post('/api/schema', payload);
         if (isMounted && res.data.schema) {
           setRealtimeSchema(res.data.schema);
@@ -68,7 +76,7 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
     <select 
       value={value || ''} 
       onChange={(e) => onChange(e.target.value)}
-      className="w-full px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
+      className="w-full px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
     >
       <option value="" disabled>{placeholder || 'Select a column...'}</option>
       {realtimeSchema.map(c => <option key={c.name} value={c.name}>{c.name} ({c.type})</option>)}
@@ -88,7 +96,8 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
       const fetchValues = async () => {
         setLoading(true);
         try {
-          const payload = { nodes, edges, targetNodeId: selectedNode.id, columnName: column };
+          const mappedNodes = nodes.map(n => ({ ...n, sql: generateNodeSQL(n, edges) }));
+          const payload = { nodes: mappedNodes, edges, targetNodeId: selectedNode.id, columnName: column };
           const res = await axios.post('/api/values', payload);
           if (isMounted && res.data.values) {
             setValues(res.data.values);
@@ -108,7 +117,7 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
       <select 
         value={value || ''} 
         onChange={(e) => onChange(e.target.value)}
-        className="w-full px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
+        className="w-full px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
       >
         <option value="" disabled>{loading ? 'Loading...' : (placeholder || 'Select a value...')}</option>
         {values.map(v => <option key={String(v)} value={String(v)}>{String(v)}</option>)}
@@ -120,12 +129,25 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
     try {
       setPreviewLoading(true);
       setPreviewError('');
-      const res = await axios.get(`http://localhost:8000/api/preview/${selectedNode!.id}`);
-      setPreviewData(res.data);
+      const payload = { nodes, edges, targetNodeId: selectedNode!.id, previewStream: previewStreamMode };
+      const res = await axios.post('/api/preview', payload);
+      setPreviewData(res.data.preview);
     } catch (err: any) {
-      setPreviewError(err.response?.data?.detail || err.message);
+      setPreviewError(err.response?.data?.error || err.message);
     } finally {
       setPreviewLoading(false);
+    }
+  };
+
+  const handleProfileNode = async () => {
+    try {
+      setProfileLoading(true);
+      const res = await axios.post('/api/profile', { nodes, edges, targetNodeId: selectedNode!.id });
+      setProfileData(res.data.profile);
+    } catch (err: any) {
+      alert(err.response?.data?.error || err.message);
+    } finally {
+      setProfileLoading(false);
     }
   };
 
@@ -185,7 +207,7 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
 
   if (!selectedNode) {
     return (
-      <aside className="w-72 border-l border-border bg-code-bg p-4 z-10 hidden lg:block relative">
+      <aside className="h-full border-l border-border bg-code-bg p-4 z-10 hidden lg:block relative">
         <h2 className="text-xs font-bold text-text uppercase tracking-wider !m-0 mb-2">
           Properties
         </h2>
@@ -197,13 +219,14 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
   }
   let fileAccept = "*/*";
   if (selectedNode.data.operation === 'csvInput') fileAccept = ".csv";
+  else if (selectedNode.data.operation === 'excelInput') fileAccept = ".xlsx, .xls";
   else if (selectedNode.data.operation === 'jsonInput') fileAccept = ".json";
   else if (selectedNode.data.operation === 'parquetInput') fileAccept = ".parquet";
 
 
   return (
     <>
-    <aside className="w-72 border-l border-border bg-code-bg flex flex-col z-10 hidden lg:block relative">
+    <aside className="h-full border-l border-border bg-code-bg flex flex-col z-10 hidden lg:flex relative">
       <div className="p-4 border-b border-border">
         <h2 className="text-xs font-bold text-text uppercase tracking-wider !m-0">
           Properties
@@ -241,12 +264,32 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
                   {selectedNode.id}
                 </div>
                 <button 
+                  onClick={() => favorites.includes(selectedNode.data.operation as string) ? removeFavorite(selectedNode.data.operation as string) : addFavorite(selectedNode.data.operation as string)}
+                  className="p-2 border border-border rounded-md hover:bg-accent-bg transition-colors"
+                  title={favorites.includes(selectedNode.data.operation as string) ? "Remove from Favorites" : "Add to Favorites"}
+                >
+                  <Star className={`w-4 h-4 ${favorites.includes(selectedNode.data.operation as string) ? 'text-yellow-500 fill-yellow-500' : 'text-text-muted'}`} />
+                </button>
+              </div>
+              <div className="flex gap-2 items-center w-full">
+                {selectedNode.data.operation === 'dataQuality' && (
+                  <select
+                    value={previewStreamMode}
+                    onChange={(e) => setPreviewStreamMode(e.target.value as any)}
+                    className="flex-1 px-2 py-2 bg-code-bg border border-border rounded text-xs text-text focus:outline-none focus:border-accent"
+                  >
+                    <option value="success">Preview Valid Rows</option>
+                    <option value="error">Preview Invalid Rows</option>
+                  </select>
+                )}
+                <button 
                   onClick={handlePreviewNode} 
                   disabled={previewLoading}
-                  className="p-2 bg-accent text-white rounded hover-lift disabled:opacity-50" 
+                  className={`${selectedNode.data.operation === 'dataQuality' ? 'w-auto px-4' : 'w-full justify-center'} flex items-center gap-2 p-2 bg-accent text-white rounded hover-lift disabled:opacity-50`}
                   title="Preview Schema & Data for this Node"
                 >
                   <FolderOpen className="w-4 h-4" />
+                  <span className="text-xs font-semibold uppercase tracking-wide">Preview</span>
                 </button>
               </div>
             </div>
@@ -257,57 +300,139 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
                 type="text" 
                 value={selectedNode.data.label as string || ''}
                 onChange={(e) => onUpdateNode(selectedNode.id, { label: e.target.value })}
-                className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
+                className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
               />
             </div>
 
-            {(selectedNode.data.operation === 'csvInput' || selectedNode.data.operation === 'jsonInput' || selectedNode.data.operation === 'parquetInput' || selectedNode.data.operation === 'excelInput') && (
-              <div className="flex flex-col gap-2">
-                <label className="text-xs font-semibold text-text-h">Uploaded Files</label>
-                <div className="flex flex-col gap-2 bg-code-bg p-2 rounded-md border border-border max-h-40 overflow-y-auto custom-scrollbar">
-                  {(() => {
-                    let fileList: string[] = [];
-                    try {
-                      const parsed = JSON.parse(selectedNode.data.file as string || '[]');
-                      fileList = Array.isArray(parsed) ? parsed : (selectedNode.data.file ? [selectedNode.data.file as string] : []);
-                    } catch (e) {
-                      fileList = selectedNode.data.file ? [selectedNode.data.file as string] : [];
-                    }
-                    
-                    return fileList.length > 0 ? fileList.map((f, i) => (
-                      <div key={i} className="flex justify-between items-center text-xs bg-bg p-1 rounded border border-border">
-                        <span className="truncate flex-1 max-w-[200px]" title={f}>{f.split(/[\\/]/).pop()}</span>
-                        <button onClick={() => {
-                          const newArr = [...fileList];
-                          newArr.splice(i, 1);
-                          onUpdateNode(selectedNode.id, { file: JSON.stringify(newArr) });
-                        }} className="text-red-500 hover:bg-red-500/10 p-1 rounded"><Trash2 className="w-3 h-3" /></button>
-                      </div>
-                    )) : <div className="text-xs text-text-muted text-center py-2">No files uploaded.</div>;
-                  })()}
-                </div>
-                <div className="flex gap-2 mt-1">
-                  <input 
-                    type="file" 
-                    multiple
-                    ref={fileInputRef} 
-                    className="hidden" 
-                    onChange={handleFileUpload}
-                    accept={fileAccept}
+            <div className="flex flex-col gap-2">
+              <label className="text-xs font-semibold text-text-h">Node Color</label>
+              <div className="flex gap-2">
+                {[
+                  { value: '', label: 'Default', light: 'var(--bg)', dark: 'var(--bg)' },
+                  { value: '#3b1c1c', label: 'Red', light: '#fecaca', dark: '#3b1c1c' },
+                  { value: '#1c2d3b', label: 'Blue', light: '#bfdbfe', dark: '#1c2d3b' },
+                  { value: '#1a3a2a', label: 'Green', light: '#bbf7d0', dark: '#1a3a2a' },
+                  { value: '#3b351a', label: 'Yellow', light: '#fef08a', dark: '#3b351a' },
+                  { value: '#2d1c3b', label: 'Purple', light: '#e9d5ff', dark: '#2d1c3b' },
+                ].map((c) => (
+                  <button
+                    key={c.value || 'default'}
+                    onClick={() => onUpdateNode(selectedNode.id, { color: c.value || '' })}
+                    className={`w-6 h-6 rounded-full border-2 transition-all ${selectedNode.data.color === c.value || (!selectedNode.data.color && !c.value) ? 'border-accent scale-110' : 'border-border hover:scale-105'}`}
+                    style={{ backgroundColor: c.value || 'var(--code-bg)' }}
+                    title={c.label}
                   />
-                  <button 
-                    onClick={handleBrowseFile}
-                    disabled={isBrowsing}
-                    className="w-full px-3 py-2 bg-accent text-white rounded-md text-sm font-medium hover-lift disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                  >
-                    <FolderOpen className="w-4 h-4" />
-                    {isBrowsing ? 'Uploading...' : 'Browse Files'}
-                  </button>
+                ))}
+              </div>
+            </div>
+
+            {selectedNode.data.operation === 'dataContract' && (
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-semibold text-text-h">Constraint Rule (SQL WHERE syntax)</label>
+                <input 
+                  type="text" 
+                  value={selectedNode.data.rule as string || ''}
+                  onChange={(e) => onUpdateNode(selectedNode.id, { rule: e.target.value })}
+                  placeholder="e.g. amount > 0 AND status IS NOT NULL"
+                  className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors font-mono"
+                />
+              </div>
+            )}
+
+            {selectedNode.data.operation === 'autoMap' && (
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-semibold text-text-h">Column Mapping (col AS new_col)</label>
+                <input 
+                  type="text" 
+                  value={selectedNode.data.mapping as string || ''}
+                  onChange={(e) => onUpdateNode(selectedNode.id, { mapping: e.target.value })}
+                  placeholder="e.g. first_name AS FirstName, dob AS DateOfBirth"
+                  className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors font-mono"
+                />
+              </div>
+            )}
+
+            {/* Breakpoint Toggle */}
+            <div className="flex flex-col gap-2 mt-4 pt-4 border-t border-border">
+              <label className="text-xs font-semibold text-text-h">Debugger Breakpoint</label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  checked={selectedNode.data.isBreakpoint as boolean || false}
+                  onChange={(e) => onUpdateNode(selectedNode.id, { isBreakpoint: e.target.checked })}
+                  className="w-4 h-4 rounded bg-code-bg border-border text-accent focus:ring-accent"
+                />
+                <span className="text-sm text-text-muted hover:text-text transition-colors">Pause execution after this node</span>
+              </label>
+            </div>
+
+            {['csvInput', 'jsonInput', 'parquetInput', 'excelInput', 'avroInput', 'orcInput', 'featherInput', 'fixedWidthInput', 'xmlInput', 'arrowInput'].includes(selectedNode.data.operation as string) && (
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">File Path (Local or Uploaded)</label>
+                  <input 
+                    type="text" 
+                    value={(() => {
+                      try {
+                        const parsed = JSON.parse(selectedNode.data.file as string || '');
+                        return Array.isArray(parsed) ? parsed[0] || '' : String(selectedNode.data.file || '');
+                      } catch(e) {
+                        return String(selectedNode.data.file || '');
+                      }
+                    })()}
+                    onChange={(e) => onUpdateNode(selectedNode.id, { file: e.target.value })}
+                    placeholder="e.g. D:/data/uncleaned.xlsx or select file below"
+                    className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors font-mono"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">Uploaded Files</label>
+                  <div className="flex flex-col gap-2 bg-code-bg p-2 rounded-md border border-border max-h-40 overflow-y-auto custom-scrollbar">
+                    {(() => {
+                      let fileList: string[] = [];
+                      try {
+                        const parsed = JSON.parse(selectedNode.data.file as string || '[]');
+                        fileList = Array.isArray(parsed) ? parsed : (selectedNode.data.file ? [selectedNode.data.file as string] : []);
+                      } catch (e) {
+                        fileList = selectedNode.data.file ? [selectedNode.data.file as string] : [];
+                      }
+                      
+                      return fileList.length > 0 ? fileList.map((f, i) => (
+                        <div key={i} className="flex justify-between items-center text-xs bg-bg p-1 rounded border border-border">
+                          <span className="truncate flex-1 max-w-[200px]" title={f}>{f.split(/[\\/]/).pop()}</span>
+                          <button onClick={() => {
+                            const newArr = [...fileList];
+                            newArr.splice(i, 1);
+                            onUpdateNode(selectedNode.id, { file: JSON.stringify(newArr) });
+                          }} className="text-red-500 hover:bg-red-500/10 p-1 rounded"><Trash2 className="w-3 h-3" /></button>
+                        </div>
+                      )) : <div className="text-xs text-text-muted text-center py-2">No files uploaded.</div>;
+                    })()}
+                  </div>
+                  <div className="flex gap-2 mt-1">
+                    <input 
+                      type="file" 
+                      multiple
+                      ref={fileInputRef} 
+                      className="hidden" 
+                      onChange={handleFileUpload}
+                      accept={fileAccept}
+                    />
+                    <button 
+                      onClick={handleBrowseFile}
+                      disabled={isBrowsing}
+                      className="w-full px-3 py-2 bg-accent text-white rounded-md text-sm font-medium hover-lift disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                      <FolderOpen className="w-4 h-4" />
+                      {isBrowsing ? 'Uploading...' : 'Browse / Upload Files'}
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
 
-            {selectedNode.data.operation === 'postgresInput' && (
+            {['postgresInput', 'mysqlInput', 'sqlserverInput', 'mongodbInput'].includes(selectedNode.data.operation as string) && (
               <>
                 <div className="flex flex-col gap-2">
                   <label className="text-xs font-semibold text-text-h">Connection String</label>
@@ -316,7 +441,7 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
                     value={selectedNode.data.connection_string as string || ''}
                     onChange={(e) => onUpdateNode(selectedNode.id, { connection_string: e.target.value })}
                     placeholder="postgresql://user:pass@localhost:5432/db"
-                    className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
+                    className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
                   />
                 </div>
                 <div className="flex flex-col gap-2">
@@ -326,10 +451,61 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
                     value={selectedNode.data.table as string || ''}
                     onChange={(e) => onUpdateNode(selectedNode.id, { table: e.target.value })}
                     placeholder="e.g. users"
-                    className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
+                    className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
                   />
                 </div>
               </>
+            )}
+
+            {['restApiInput', 'graphQLInput'].includes(selectedNode.data.operation as string) && (
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-semibold text-text-h">API Endpoint URL</label>
+                <input 
+                  type="text" 
+                  value={selectedNode.data.url as string || ''}
+                  onChange={(e) => onUpdateNode(selectedNode.id, { url: e.target.value })}
+                  placeholder="https://api.example.com/data"
+                  className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
+                />
+              </div>
+            )}
+
+            {selectedNode.data.operation === 'sqliteInput' && (
+              <>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">SQLite DB Path</label>
+                  <input 
+                    type="text" 
+                    value={selectedNode.data.db_path as string || ''}
+                    onChange={(e) => onUpdateNode(selectedNode.id, { db_path: e.target.value })}
+                    placeholder="/absolute/path/to/db.sqlite"
+                    className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">Table Name</label>
+                  <input 
+                    type="text" 
+                    value={selectedNode.data.table as string || ''}
+                    onChange={(e) => onUpdateNode(selectedNode.id, { table: e.target.value })}
+                    placeholder="e.g. users"
+                    className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
+                  />
+                </div>
+              </>
+            )}
+
+            {selectedNode.data.operation === 'duckdbInput' && (
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-semibold text-text-h">DuckDB File Path</label>
+                <input 
+                  type="text" 
+                  value={selectedNode.data.file as string || ''}
+                  onChange={(e) => onUpdateNode(selectedNode.id, { file: e.target.value })}
+                  placeholder="/absolute/path/to/data.duckdb"
+                  className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
+                />
+              </div>
             )}
 
             {selectedNode.data.operation === 'removeDuplicates' && (
@@ -340,23 +516,8 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
 
             {selectedNode.data.operation === 'removeNulls' && (
               <div className="flex flex-col gap-2">
-                <label className="text-xs font-semibold text-text-h">Filter Condition</label>
-                <div className="flex gap-2">
-                  <div className="flex-1">
-                    <ColumnSelect value={selectedNode.data.filterCol as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { filterCol: val })} placeholder="Column" />
-                  </div>
-                  <select value={selectedNode.data.filterOp as string || '='} onChange={(e) => onUpdateNode(selectedNode.id, { filterOp: e.target.value })} className="w-16 px-1 py-2 bg-code-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors">
-                    <option value="=">=</option>
-                    <option value="!=">!=</option>
-                    <option value=">">&gt;</option>
-                    <option value="<">&lt;</option>
-                    <option value=">=">&gt;=</option>
-                    <option value="<=">&lt;=</option>
-                  </select>
-                  <div className="flex-1">
-                    <ValueSelect column={selectedNode.data.filterCol as string} value={selectedNode.data.filterVal as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { filterVal: val })} placeholder="Value" />
-                  </div>
-                </div>
+                <label className="text-xs font-semibold text-text-h">Target Column (Remove if Null)</label>
+                <ColumnSelect value={selectedNode.data.column as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { column: val })} placeholder="e.g. email" />
               </div>
             )}
 
@@ -373,7 +534,7 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
                     value={selectedNode.data.defaultVal as string || ''}
                     onChange={(e) => onUpdateNode(selectedNode.id, { defaultVal: e.target.value })}
                     placeholder="e.g. 0 or 'Unknown'"
-                    className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
+                    className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
                   />
                 </div>
               </>
@@ -388,7 +549,7 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
                     value={selectedNode.data.column as string || ''}
                     onChange={(e) => onUpdateNode(selectedNode.id, { column: e.target.value })}
                     placeholder="e.g. amount"
-                    className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
+                    className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
                   />
                 </div>
                 <div className="flex flex-col gap-2 mt-2">
@@ -486,14 +647,25 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
 
             {selectedNode.data.operation === 'filterRows' && (
               <div className="flex flex-col gap-2">
-                <label className="text-xs font-semibold text-text-h">SQL Condition</label>
-                <input 
-                  type="text" 
-                  value={selectedNode.data.condition as string || ''}
-                  onChange={(e) => onUpdateNode(selectedNode.id, { condition: e.target.value })}
-                  placeholder="e.g. age > 18 AND status = 'active'"
-                  className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
-                />
+                <label className="text-xs font-semibold text-text-h">Filter Condition</label>
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <ColumnSelect value={selectedNode.data.filterCol as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { filterCol: val })} placeholder="Column" />
+                  </div>
+                  <select value={selectedNode.data.filterOp as string || '='} onChange={(e) => onUpdateNode(selectedNode.id, { filterOp: e.target.value })} className="w-16 px-1 py-2 bg-code-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors">
+                    <option value="=">=</option>
+                    <option value="!=">!=</option>
+                    <option value=">">&gt;</option>
+                    <option value="<">&lt;</option>
+                    <option value=">=">&gt;=</option>
+                    <option value="<=">&lt;=</option>
+                    <option value="IS NULL">IS NULL</option>
+                    <option value="IS NOT NULL">IS NOT NULL</option>
+                  </select>
+                  <div className="flex-1">
+                    <ValueSelect column={selectedNode.data.filterCol as string} value={selectedNode.data.filterVal as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { filterVal: val })} placeholder="Value" />
+                  </div>
+                </div>
               </div>
             )}
 
@@ -628,37 +800,61 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
               </div>
             )}
 
-            {selectedNode.data.operation === 'innerJoin' && (
+            {['innerJoin', 'leftJoin', 'fullOuterJoin', 'antiJoin', 'semiJoin'].includes(selectedNode.data.operation as string) && (
               <div className="flex flex-col gap-2">
-                <label className="text-xs font-semibold text-text-h">Join Condition</label>
+                <label className="text-xs font-semibold text-text-h">Join Condition ({selectedNode.data.operation as string})</label>
                 <input 
                   type="text" 
                   value={selectedNode.data.joinCondition as string || ''}
                   onChange={(e) => onUpdateNode(selectedNode.id, { joinCondition: e.target.value })}
                   placeholder="e.g. t1.id = t2.user_id"
-                  className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
+                  className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
                 />
-                <span className="text-[10px] text-text-muted">Note: Connect exactly two parent nodes.</span>
+                <span className="text-[10px] text-text-muted">Note: Connect two parent nodes.</span>
               </div>
             )}
 
-            {selectedNode.data.operation === 'leftJoin' && (
-              <div className="flex flex-col gap-2">
-                <label className="text-xs font-semibold text-text-h">Join Condition (Left Join)</label>
-                <input 
-                  type="text" 
-                  value={selectedNode.data.joinCondition as string || ''}
-                  onChange={(e) => onUpdateNode(selectedNode.id, { joinCondition: e.target.value })}
-                  placeholder="e.g. t1.id = t2.user_id"
-                  className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
-                />
-                <span className="text-[10px] text-text-muted">Note: Connect exactly two parent nodes.</span>
-              </div>
-            )}
-
-            {selectedNode.data.operation === 'unionAll' && (
+            {['unionAll', 'crossJoin', 'intersectNodes', 'exceptNodes'].includes(selectedNode.data.operation as string) && (
               <div className="p-3 bg-code-bg border border-border rounded-md text-xs text-text-muted">
-                This node vertically appends two tables together. Both incoming nodes must have identical columns. Connect exactly two parent nodes.
+                Combines two incoming parent tables using {selectedNode.data.operation as string}. Connect two parent nodes.
+              </div>
+            )}
+
+            {['rankRows', 'denseRankRows', 'percentRankRows'].includes(selectedNode.data.operation as string) && (
+              <>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">Partition By Column</label>
+                  <ColumnSelect value={selectedNode.data.partCol as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { partCol: val })} placeholder="e.g. department" />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">Order By Column</label>
+                  <ColumnSelect value={selectedNode.data.orderCol as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { orderCol: val })} placeholder="e.g. salary" />
+                </div>
+              </>
+            )}
+
+            {['leadRows', 'lagRows'].includes(selectedNode.data.operation as string) && (
+              <>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">Target Column</label>
+                  <ColumnSelect value={selectedNode.data.column as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { column: val })} placeholder="e.g. price" />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">Offset</label>
+                  <input 
+                    type="number" 
+                    value={selectedNode.data.offset as string || '1'} 
+                    onChange={(e) => onUpdateNode(selectedNode.id, { offset: e.target.value })}
+                    className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text"
+                  />
+                </div>
+              </>
+            )}
+
+            {selectedNode.data.operation === 'hashColumn' && (
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-semibold text-text-h">Column to Hash (MD5)</label>
+                <ColumnSelect value={selectedNode.data.column as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { column: val })} placeholder="e.g. email" />
               </div>
             )}
 
@@ -671,7 +867,7 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
                     value={selectedNode.data.groupCol as string || ''}
                     onChange={(e) => onUpdateNode(selectedNode.id, { groupCol: e.target.value })}
                     placeholder="e.g. department"
-                    className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
+                    className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
                   />
                 </div>
                 <div className="flex gap-2">
@@ -703,9 +899,92 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
                       value={selectedNode.data.aggCol as string || ''}
                       onChange={(e) => onUpdateNode(selectedNode.id, { aggCol: e.target.value })}
                       placeholder="e.g. salary"
-                      className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
+                      className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
                     />
                   </div>
+                </div>
+              </>
+            )}
+
+            {['medianAgg', 'modeAgg', 'stdDevAgg', 'varianceAgg'].includes(selectedNode.data.operation as string) && (
+              <>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">Group By Column</label>
+                  <input type="text" value={selectedNode.data.groupCol as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { groupCol: e.target.value })} placeholder="e.g. category" className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors" />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">Numeric Column</label>
+                  <input type="text" value={selectedNode.data.aggCol as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { aggCol: e.target.value })} placeholder="e.g. price" className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors" />
+                </div>
+              </>
+            )}
+
+            {selectedNode.data.operation === 'correlationMatrix' && (
+              <>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">Column 1</label>
+                  <input type="text" value={selectedNode.data.col1 as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { col1: e.target.value })} placeholder="e.g. age" className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors" />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">Column 2</label>
+                  <input type="text" value={selectedNode.data.col2 as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { col2: e.target.value })} placeholder="e.g. salary" className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors" />
+                </div>
+              </>
+            )}
+
+            {['movingAverage', 'runningTotal'].includes(selectedNode.data.operation as string) && (
+              <>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">Target Column (Numeric)</label>
+                  <input type="text" value={selectedNode.data.column as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { column: e.target.value })} placeholder="e.g. amount" className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors" />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">Partition By (Optional)</label>
+                  <input type="text" value={selectedNode.data.partCol as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { partCol: e.target.value })} placeholder="e.g. category" className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors" />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">Order By</label>
+                  <input type="text" value={selectedNode.data.orderCol as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { orderCol: e.target.value })} placeholder="e.g. date" className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors" />
+                </div>
+                {selectedNode.data.operation === 'movingAverage' && (
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs font-semibold text-text-h">Window Size (Rows)</label>
+                    <input type="number" value={selectedNode.data.window as string || '3'} onChange={(e) => onUpdateNode(selectedNode.id, { window: e.target.value })} className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors" />
+                  </div>
+                )}
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">New Column Name</label>
+                  <input type="text" value={selectedNode.data.newCol as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { newCol: e.target.value })} placeholder="e.g. moving_avg" className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors" />
+                </div>
+              </>
+            )}
+
+            {['normalizeColumn', 'standardizeColumn'].includes(selectedNode.data.operation as string) && (
+              <>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">Target Column</label>
+                  <input type="text" value={selectedNode.data.column as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { column: e.target.value })} placeholder="e.g. score" className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors" />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">New Column Name</label>
+                  <input type="text" value={selectedNode.data.newCol as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { newCol: e.target.value })} placeholder="e.g. norm_score" className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors" />
+                </div>
+              </>
+            )}
+
+            {selectedNode.data.operation === 'regexMatch' && (
+              <>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">Target Column</label>
+                  <input type="text" value={selectedNode.data.column as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { column: e.target.value })} placeholder="e.g. email" className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors" />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">Regex Pattern</label>
+                  <input type="text" value={selectedNode.data.pattern as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { pattern: e.target.value })} placeholder="e.g. ^[a-z]+$" className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors" />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">New Column Name (Boolean)</label>
+                  <input type="text" value={selectedNode.data.newCol as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { newCol: e.target.value })} placeholder="e.g. is_valid" className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors" />
                 </div>
               </>
             )}
@@ -826,23 +1105,85 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
               </div>
             )}
 
-            {selectedNode.data.operation === 'aiTransform' && (
-              <div className="flex flex-col gap-2">
-                <label className="text-xs font-semibold text-text-h">AI Prompt (What do you want to do?)</label>
-                <textarea 
-                  value={selectedNode.data.prompt as string || ''}
-                  onChange={(e) => onUpdateNode(selectedNode.id, { prompt: e.target.value })}
-                  placeholder="e.g. Keep only active users and create a new column for their full name"
-                  className="flex-1 p-3 min-h-[100px] bg-code-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors resize-none"
-                />
-                <button 
-                  onClick={() => onAIGenerate && onAIGenerate(selectedNode.id, selectedNode.data.prompt as string)}
-                  className="w-full mt-2 bg-accent text-white py-2 rounded-md text-sm font-medium hover-lift"
-                >
-                  Generate SQL with AI
-                </button>
-              </div>
+            {selectedNode.data.operation === 'regexReplace' && (
+              <>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">Target Column</label>
+                  <ColumnSelect value={selectedNode.data.column as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { column: val })} placeholder="e.g. text" />
+                </div>
+                <div className="flex flex-col gap-2 mt-2">
+                  <label className="text-xs font-semibold text-text-h">Regex Pattern</label>
+                  <input type="text" value={selectedNode.data.pattern as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { pattern: e.target.value })} placeholder="e.g. [0-9]+" className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text" />
+                </div>
+                <div className="flex flex-col gap-2 mt-2">
+                  <label className="text-xs font-semibold text-text-h">Replacement</label>
+                  <input type="text" value={selectedNode.data.replacement as string || ''} onChange={(e) => onUpdateNode(selectedNode.id, { replacement: e.target.value })} placeholder="e.g. NUM" className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text" />
+                </div>
+              </>
             )}
+
+            {selectedNode.data.operation === 'substringCol' && (
+              <>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">Target Column</label>
+                  <ColumnSelect value={selectedNode.data.column as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { column: val })} placeholder="e.g. name" />
+                </div>
+                <div className="flex gap-2 mt-2">
+                  <div className="flex flex-col gap-2 w-1/2">
+                    <label className="text-xs font-semibold text-text-h">Start Index (1-based)</label>
+                    <input type="number" value={selectedNode.data.start as string || '1'} onChange={(e) => onUpdateNode(selectedNode.id, { start: e.target.value })} className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text" />
+                  </div>
+                  <div className="flex flex-col gap-2 w-1/2">
+                    <label className="text-xs font-semibold text-text-h">Length</label>
+                    <input type="number" value={selectedNode.data.length as string || '10'} onChange={(e) => onUpdateNode(selectedNode.id, { length: e.target.value })} className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text" />
+                  </div>
+                </div>
+              </>
+            )}
+
+            {selectedNode.data.operation === 'leftRightString' && (
+              <>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">Target Column</label>
+                  <ColumnSelect value={selectedNode.data.column as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { column: val })} placeholder="e.g. name" />
+                </div>
+                <div className="flex gap-2 mt-2">
+                  <div className="flex flex-col gap-2 w-1/2">
+                    <label className="text-xs font-semibold text-text-h">Direction</label>
+                    <select value={selectedNode.data.direction as string || 'LEFT'} onChange={(e) => onUpdateNode(selectedNode.id, { direction: e.target.value })} className="px-2 py-2 bg-code-bg border border-border rounded-md text-sm text-text">
+                      <option value="LEFT">LEFT</option>
+                      <option value="RIGHT">RIGHT</option>
+                    </select>
+                  </div>
+                  <div className="flex flex-col gap-2 w-1/2">
+                    <label className="text-xs font-semibold text-text-h">Length</label>
+                    <input type="number" value={selectedNode.data.length as string || '5'} onChange={(e) => onUpdateNode(selectedNode.id, { length: e.target.value })} className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text" />
+                  </div>
+                </div>
+              </>
+            )}
+
+            {selectedNode.data.operation === 'dateDiff' && (
+              <>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-text-h">Start Date Column</label>
+                  <ColumnSelect value={selectedNode.data.startCol as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { startCol: val })} placeholder="e.g. created_at" />
+                </div>
+                <div className="flex flex-col gap-2 mt-2">
+                  <label className="text-xs font-semibold text-text-h">End Date Column</label>
+                  <ColumnSelect value={selectedNode.data.endCol as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { endCol: val })} placeholder="e.g. updated_at" />
+                </div>
+                <div className="flex flex-col gap-2 mt-2">
+                  <label className="text-xs font-semibold text-text-h">Difference In</label>
+                  <select value={selectedNode.data.datePart as string || 'day'} onChange={(e) => onUpdateNode(selectedNode.id, { datePart: e.target.value })} className="px-2 py-2 bg-code-bg border border-border rounded-md text-sm text-text">
+                    <option value="day">Days</option>
+                    <option value="month">Months</option>
+                    <option value="year">Years</option>
+                  </select>
+                </div>
+              </>
+            )}
+
 
             {selectedNode.data.operation === 'exportCsv' && (
               <div className="flex flex-col gap-2">
@@ -852,7 +1193,7 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
                   value={selectedNode.data.file as string || ''}
                   onChange={(e) => onUpdateNode(selectedNode.id, { file: e.target.value })}
                   placeholder="e.g. output/results.csv"
-                  className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
+                  className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
                 />
               </div>
             )}
@@ -904,71 +1245,46 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
             </div>
             
             <div className="flex flex-col gap-2">
-              <label className="text-xs font-semibold text-text-h">Validation</label>
-              <div className="p-3 bg-code-bg border border-border rounded-md text-sm text-text">
-                <span className="text-green-400 flex items-center gap-2">✓ No errors detected</span>
-              </div>
+              <label className="text-xs font-semibold text-text-h">Data Profiling</label>
+              <button 
+                onClick={handleProfileNode}
+                disabled={profileLoading}
+                className="w-full px-3 py-2 bg-accent text-white rounded-md text-sm font-medium hover-lift disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {profileLoading ? 'Profiling Data...' : 'Run Statistical Profile'}
+              </button>
             </div>
+            
+            {profileData && (
+              <div className="flex flex-col gap-2 mt-2">
+                <label className="text-xs font-semibold text-text-h">Statistics (SUMMARIZE)</label>
+                <div className="flex flex-col gap-2 max-h-64 overflow-y-auto custom-scrollbar p-2 bg-bg border border-border rounded">
+                  {profileData.map((col: any, i: number) => (
+                    <div key={i} className="flex flex-col gap-1 p-2 bg-code-bg rounded border border-border text-xs">
+                      <div className="font-bold text-accent">{col.column_name} <span className="text-text-muted font-normal">({col.column_type})</span></div>
+                      <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-text mt-1">
+                        <div><span className="text-text-muted">Min:</span> {col.min}</div>
+                        <div><span className="text-text-muted">Max:</span> {col.max}</div>
+                        <div><span className="text-text-muted">Nulls:</span> {col.null_percentage}%</div>
+                        <div><span className="text-text-muted">Unique:</span> {col.approx_unique}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
     </aside>
 
-    {/* Preview Modal */}
-    {previewData && (
-      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setPreviewData(null)}>
-        <div className="w-[80vw] max-w-4xl max-h-[80vh] bg-bg border border-border rounded-xl shadow-shadow flex flex-col" onClick={e => e.stopPropagation()}>
-          <div className="p-4 border-b border-border flex justify-between items-center glass-header">
-            <h2 className="text-lg font-bold text-text-h !m-0">Schema & Data Preview: {(selectedNode.data.label as string)}</h2>
-            <button onClick={() => setPreviewData(null)} className="text-text-muted hover:text-text-h">Close</button>
-          </div>
-          <div className="flex-1 overflow-auto p-4 bg-code-bg">
-            <div className="mb-4">
-              <h3 className="text-sm font-bold text-text-h mb-2">Columns Schema</h3>
-              <div className="flex flex-wrap gap-2">
-                {previewData.columns.map((c: any, i: number) => (
-                  <div key={i} className="px-2 py-1 bg-bg border border-border rounded text-xs font-mono">
-                    <span className="text-accent">{c.name}</span> <span className="text-text-muted">{c.type}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <h3 className="text-sm font-bold text-text-h mb-2">Sample Data (Top 10)</h3>
-            <div className="overflow-x-auto border border-border rounded bg-bg">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead className="bg-code-bg">
-                  <tr>
-                    {previewData.columns.map((c: any, i: number) => (
-                      <th key={i} className="p-2 border-b border-r border-border font-semibold text-text-h whitespace-nowrap">{c.name}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {previewData.sample_data.map((row: any, i: number) => (
-                    <tr key={i} className="border-b border-border hover:bg-code-bg/50">
-                      {previewData.columns.map((c: any, j: number) => (
-                        <td key={j} className="p-2 border-r border-border whitespace-nowrap text-text font-mono truncate max-w-[200px]">{String(row[c.name] ?? '')}</td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      </div>
-    )}
-    
-    {/* Error Modal */}
-    {previewError && (
-      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setPreviewError('')}>
-        <div className="w-full max-w-md p-6 bg-bg border border-red-500/50 rounded-xl shadow-shadow text-center" onClick={e => e.stopPropagation()}>
-          <h3 className="text-lg font-bold text-red-400 mb-2">Preview Unavailable</h3>
-          <p className="text-sm text-text mb-4">{previewError}</p>
-          <button onClick={() => setPreviewError('')} className="px-4 py-2 bg-code-bg text-text-h rounded hover-lift">Close</button>
-        </div>
-      </div>
-    )}
+    <DataPreviewModal 
+      previewData={previewData} 
+      previewError={previewError} 
+      setPreviewData={setPreviewData} 
+      setPreviewError={setPreviewError} 
+      nodeLabel={selectedNode.data.label as string || ''} 
+    />
     </>
   );
 }
