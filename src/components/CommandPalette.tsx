@@ -113,7 +113,6 @@ export default function CommandPalette({ onAddNode, onRunPipeline, onOpenVariabl
     { name: 'Add Node: Export CSV', icon: Plus, action: () => onAddNode('transform', 'exportCsv') },
     
     { name: 'Add Node: Custom SQL', icon: Plus, action: () => onAddNode('transform', 'customSql') },
-    { name: 'Add Node: AI Transform', icon: Plus, action: () => onAddNode('transform', 'aiTransform') },
     
     { name: 'Variables & Settings', icon: Settings, action: () => onOpenVariables && onOpenVariables() },
   ];

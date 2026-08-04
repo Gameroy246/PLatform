@@ -12,12 +12,11 @@ import { useStore } from '../store';
 interface PropertiesPanelProps {
   selectedNode: Node | null;
   onUpdateNode: (id: string, data: any) => void;
-  onAIGenerate?: (id: string, prompt: string) => Promise<void>;
   nodes?: Node[];
   edges?: Edge[];
 }
 
-export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenerate, nodes = [], edges = [] }: PropertiesPanelProps) {
+export default function PropertiesPanel({ selectedNode, onUpdateNode, nodes = [], edges = [] }: PropertiesPanelProps) {
   const { favorites, addFavorite, removeFavorite } = useStore();
   const [activeTab, setActiveTab] = useState<'settings' | 'description' | 'metadata'>('settings');
   const [previewStreamMode, setPreviewStreamMode] = useState<'success' | 'error'>('success');
@@ -1185,23 +1184,6 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, onAIGenera
               </>
             )}
 
-            {selectedNode.data.operation === 'aiTransform' && (
-              <div className="flex flex-col gap-2">
-                <label className="text-xs font-semibold text-text-h">AI Prompt (What do you want to do?)</label>
-                <textarea 
-                  value={selectedNode.data.prompt as string || ''}
-                  onChange={(e) => onUpdateNode(selectedNode.id, { prompt: e.target.value })}
-                  placeholder="e.g. Keep only active users and create a new column for their full name"
-                  className="flex-1 p-3 min-h-[100px] bg-code-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors resize-none"
-                />
-                <button 
-                  onClick={() => onAIGenerate && onAIGenerate(selectedNode.id, selectedNode.data.prompt as string)}
-                  className="w-full mt-2 bg-accent text-white py-2 rounded-md text-sm font-medium hover-lift"
-                >
-                  Generate SQL with AI
-                </button>
-              </div>
-            )}
 
             {selectedNode.data.operation === 'exportCsv' && (
               <div className="flex flex-col gap-2">

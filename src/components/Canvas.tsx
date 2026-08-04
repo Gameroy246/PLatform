@@ -21,7 +21,6 @@ import HistoryViewer from './HistoryViewer';
 import WelcomeModal from './WelcomeModal';
 import AuditLogs from './AuditLogs';
 import SettingsModal from './SettingsModal';
-import AIPipelineBuilderModal from './AIPipelineBuilderModal';
 import { Settings, Sparkles, Folders } from 'lucide-react';
 
 const labelMap: Record<string, string> = {
@@ -92,7 +91,6 @@ const labelMap: Record<string, string> = {
   mathFormula: 'Math Formula',
   extractYear: 'Extract Year',
   customSql: 'Custom SQL',
-  aiTransform: 'AI Transform',
   exportCsv: 'Export CSV',
 };
 
@@ -119,34 +117,6 @@ export default function Canvas() {
     setTimeout(() => setToast(null), 4000);
   };
   
-  const handleAIGenerate = async (id: string, prompt: string) => {
-    if (!prompt) return showToast('Please enter an AI prompt', 'warning');
-    if (!apiKey) return showToast('Please set your Gemini API key in settings (top right)', 'warning');
-    
-    showToast('Generating SQL with Gemini...', 'success');
-    
-    try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: `You are a SQL generator. Output ONLY a valid DuckDB SQL query inside a markdown code block. Do NOT explain it. Do NOT use standard markdown formatting except for the code block. The user asks: ${prompt}` }] }]
-        })
-      });
-      const data = await response.json();
-      if (!data.candidates || data.candidates.length === 0) throw new Error('No response');
-      
-      let sql = data.candidates[0].content.parts[0].text;
-      sql = sql.replace(/```sql\n?/g, '').replace(/```\n?/g, '').trim();
-      
-      updateNodeData(id, { sql });
-      showToast('SQL generated successfully', 'success');
-    } catch (e) {
-      showToast('Failed to generate SQL', 'error');
-      console.error(e);
-    }
-  };
-  
   useEffect(() => { 
     setMounted(true); 
     setApiKey(localStorage.getItem('GEMINI_API_KEY') || ''); 
@@ -163,7 +133,6 @@ export default function Canvas() {
 
   const [isWelcomeModalOpen, setIsWelcomeModalOpen] = useState(true);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
-  const [isAIModalOpen, setIsAIModalOpen] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
 
   // Init from Local Storage
@@ -829,10 +798,6 @@ export default function Canvas() {
             Auto Layout
           </button>
 
-          <button onClick={() => setIsAIModalOpen(true)} className="px-4 py-2 rounded-lg font-bold flex items-center gap-2 bg-gradient-to-r from-accent to-purple-600 text-white shadow-glow hover:opacity-90 mr-4">
-            <Sparkles className="w-4 h-4" /> AI Builder
-          </button>
-          
           <button onClick={handleRunPipeline} disabled={isRunning} className={`px-4 py-2 rounded-lg font-bold flex items-center gap-2 shadow-glow transition-all ${isRunning ? 'bg-accent/50 text-white/50' : 'bg-accent text-white hover-bg-lift'}`}>
             {isRunning ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Play className="w-4 h-4" />}
             {isRunning ? 'Executing...' : 'Run Pipeline'}
@@ -986,7 +951,6 @@ export default function Canvas() {
                   <div onDragStart={(e) => onDragStart(e, 'transform', 'leftJoin')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Left Join</div>
                   <div onDragStart={(e) => onDragStart(e, 'transform', 'unionAll')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Union All</div>
                   <div onDragStart={(e) => onDragStart(e, 'transform', 'customSql')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Custom SQL</div>
-                  <div onDragStart={(e) => onDragStart(e, 'transform', 'aiTransform')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">AI Transform</div>
                 </div>
               )}
             </div>
@@ -1049,16 +1013,6 @@ export default function Canvas() {
           <SettingsModal onClose={() => setIsSettingsModalOpen(false)} />
         )}
 
-        {isAIModalOpen && (
-          <AIPipelineBuilderModal 
-             onClose={() => setIsAIModalOpen(false)}
-             onGenerate={(pipeline) => {
-               setNodes(pipeline.nodes);
-               setEdges(pipeline.edges);
-             }}
-          />
-        )}
-
         {/* Main Canvas Area */}
         <main className="flex-1 relative">
           <ReactFlow
@@ -1112,7 +1066,6 @@ export default function Canvas() {
               onUpdateNode={updateNodeData}
               nodes={nodes}
               edges={edges}
-              onAIGenerate={handleAIGenerate}
             />
           </div>
         )}
