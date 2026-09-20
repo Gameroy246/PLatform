@@ -21,7 +21,7 @@ import HistoryViewer from './HistoryViewer';
 import WelcomeModal from './WelcomeModal';
 import AuditLogs from './AuditLogs';
 import SettingsModal from './SettingsModal';
-import { Settings, Sparkles, Folders, CheckCircle, ShieldAlert, LogOut } from 'lucide-react';
+import { Settings, Sparkles, Folders, CheckCircle, ShieldAlert, LogOut, ArrowLeft } from 'lucide-react';
 
 const labelMap: Record<string, string> = {
   csvInput: 'CSV Input',
@@ -204,9 +204,9 @@ export default function Canvas({ projectId, onBack, onOpenAdmin, onLogout }: { p
 
   const sanitizeEdges = (rawEdges: any[]) => {
     const NodeItem = ({ type, operation, label }: { type: string, operation: string, label: string }) => {
-    if (!userFeatures.includes('all') && !userFeatures.includes(operation)) return null;
-    return (
-      <div 
+      if (!userFeatures.includes('all') && !userFeatures.includes(operation)) return null;
+      return (
+        <div 
         onDragStart={(e: any) => onDragStart(e, type, operation)} 
         draggable 
         className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors"
@@ -726,6 +726,7 @@ export default function Canvas({ projectId, onBack, onOpenAdmin, onLogout }: { p
 
   const NodeItem = ({ type, operation, label }: { type: string, operation: string, label: string }) => {
     if (!userFeatures.includes('all') && !userFeatures.includes(operation)) return null;
+    if (sidebarSearch && !label.toLowerCase().includes(sidebarSearch.toLowerCase())) return null;
     return (
       <div 
         onDragStart={(e: any) => onDragStart(e, type, operation)} 
@@ -778,6 +779,11 @@ export default function Canvas({ projectId, onBack, onOpenAdmin, onLogout }: { p
       {/* Top Bar */}
       <header className="flex items-center justify-between px-6 py-3 bg-code-bg border-b border-border z-10 relative">
         <div className="flex items-center gap-3">
+          {onBack && (
+            <button onClick={onBack} className="p-1.5 hover:bg-bg rounded transition-colors mr-1 border border-border bg-code-bg hover:text-text-h text-text-muted">
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+          )}
           <Database className="w-5 h-5 text-accent" />
           <h1 className="text-lg font-semibold text-text-h !m-0 !tracking-tight">
             Local Data Architect
