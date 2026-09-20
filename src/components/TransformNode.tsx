@@ -34,15 +34,17 @@ export default function TransformNode({ data, selected }: { data: any, selected?
     <div
       style={{
         background: data.color || 'var(--bg)',
-        border: selected ? `2px solid ${accentColor}` : `1px solid var(--border)`,
+        border: selected ? `2px solid ${accentColor}` : data.status === 'SUCCESS' ? '2px solid #4ade80' : data.status === 'ERROR' ? '2px solid #f87171' : data.status === 'RUNNING' ? `2px solid ${accentColor}` : `1px solid var(--border)`,
         borderRadius: 8,
         padding: '16px',
         minWidth: 220,
-        boxShadow: selected ? `0 0 0 4px ${accentColor}33, var(--node-shadow)` : 'var(--node-shadow)',
+        boxShadow: data.status === 'SUCCESS' ? '0 0 15px rgba(74, 222, 128, 0.2)' : data.status === 'ERROR' ? '0 0 15px rgba(248, 113, 113, 0.2)' : data.status === 'RUNNING' ? `0 0 15px ${accentColor}80, inset 0 0 10px ${accentColor}40` : selected ? `0 0 0 4px ${accentColor}33, var(--node-shadow)` : 'var(--node-shadow)',
         position: 'relative',
         display: 'flex',
         flexDirection: 'column',
         gap: '12px',
+        opacity: data.muted ? 0.4 : 1,
+        filter: data.muted ? 'grayscale(100%)' : 'none',
         transition: 'all 0.2s ease-in-out'
       }}
     >
@@ -76,6 +78,12 @@ export default function TransformNode({ data, selected }: { data: any, selected?
           </span>
         </div>
       </div>
+      
+      {data.executionTime !== undefined && (
+        <div className={`absolute -top-3 -right-3 text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm border ${data.status === 'ERROR' ? 'bg-red-100 text-red-600 border-red-200' : 'bg-green-100 text-green-700 border-green-200'}`}>
+          {data.executionTime}ms
+        </div>
+      )}
 
       {/* Output handles */}
       <div style={{ position: 'absolute', right: -7, top: '50%', transform: 'translateY(-50%)', display: 'flex', flexDirection: 'column', gap: 6 }}>

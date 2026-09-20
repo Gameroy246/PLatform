@@ -1,4 +1,4 @@
-export function generateNodeSQL(node: any, edges: any[]): string {
+export function generateNodeSQL(node: any, edges: any[], variables: Record<string, string> = {}): string {
   let generatedSql = node.data.sql as string || "";
   const op = node.data.operation;
   const parentEdges = edges.filter(e => e.target === node.id);
@@ -9,6 +9,14 @@ export function generateNodeSQL(node: any, edges: any[]): string {
   });
   const parent1 = parents[0] || 'DUAL';
   const parent2 = parents[1] || 'DUAL';
+
+  if (node.data.muted) {
+    if (parentEdges.length > 0) {
+      return `SELECT * FROM ${parent1}`;
+    }
+    // If it's a muted data source, just return an empty table
+    return `SELECT 1 AS _muted WHERE 1=0`;
+  }
 
   // Helper functions to escape SQL injection and handle missing values
   const escapeId = (id: any) => {
@@ -25,20 +33,49 @@ export function generateNodeSQL(node: any, edges: any[]): string {
   const safeCol = (col: any, defaultCol: string = '1') => escapeId(col) || defaultCol;
   const safeNewCol = (col: any, defaultCol: string = 'new_col') => escapeId(col) || escapeId(defaultCol);
   
+  // Anti-SQL-Injection Validator
+  const sanitizeFormula = (formula: any) => {
+    if (!formula) return "1";
+    const str = String(formula);
+    if (!/^[a-zA-Z0-9_+\-*/().>=<!\s"']+$/.test(str)) {
+       return "0 /* INVALID CHARACTERS BLOCKED */";
+    }
+    if (/\b(SELECT|COPY|INSERT|DELETE|UPDATE|DROP|ALTER|CREATE|EXEC|PRAGMA)\b/i.test(str)) {
+      return "0 /* ILLEGAL SQL BLOCKED */";
+    }
+    return str;
+  };
+
   // Default pass-through if missing required configuration
   const passThrough = `SELECT * FROM ${parent1}`;
 
   switch (op) {
-    case 'dataQuality':
+    case 'customSql': {
+       if (!node.data.sql) { generatedSql = passThrough; break; }
+       generatedSql = String(node.data.sql).replace(/{parent}/g, parent1).replace(/{parent2}/g, parent2);
+       break;
+    }
+    case 'dataQuality': {
       if (!node.data.column) { generatedSql = passThrough; break; }
       const dqCol = safeCol(node.data.column);
       const dqOp = (node.data.operator as string) || '=';
       let dqVal = (node.data.value as string) || '1';
-      if (dqOp.includes('NULL')) dqVal = '';
-      else if (!dqVal.startsWith("'") && isNaN(Number(dqVal))) dqVal = escapeStr(dqVal);
-      const condition = `${dqCol} ${dqOp} ${dqVal}`;
+      
+      let leftSide = dqCol;
+      
+      if (dqOp.includes('NULL')) {
+          dqVal = '';
+      } else if (!dqVal.startsWith("'") && !isNaN(Number(dqVal)) && dqVal.trim() !== '') {
+          leftSide = `try_cast(${dqCol} AS DOUBLE)`;
+      } else {
+          if (!dqVal.startsWith("'")) dqVal = escapeStr(dqVal);
+      }
+      
+      const safeDqVal = sanitizeFormula(dqVal);
+      const condition = `${leftSide} ${dqOp} ${safeDqVal}`;
       generatedSql = `SELECT * FROM ${parent1} WHERE ${condition} ___LDA_DATA_QUALITY_SPLIT___ SELECT * FROM ${parent1} WHERE NOT (${condition})`; 
       break;
+    }
 
     case 'csvInput': 
     case 'fixedWidthInput':
@@ -46,23 +83,37 @@ export function generateNodeSQL(node: any, edges: any[]): string {
     case 'orcInput': {
       if (!node.data.file) { generatedSql = `SELECT 'No file selected' AS status`; break; }
       const file = String(node.data.file);
-      let arg = escapeStr(file.replace(/\\/g, '/'));
-      try { const parsed = JSON.parse(file); if(Array.isArray(parsed)) arg = `[${parsed.map((p: string) => escapeStr(p.replace(/\\/g, '/'))).join(',')}]`; } catch(e){}
-      generatedSql = `SELECT * FROM read_csv_auto(${arg}, union_by_name=true, header=true, ignore_errors=true, all_varchar=true, null_padding=true)`;
+      let arg = escapeStr((file.split(/[/\\]/).pop() || ''));
+      let isMulti = false;
+      try { const parsed = JSON.parse(file); if(Array.isArray(parsed)) { arg = `[${parsed.map((p: string) => escapeStr((p.split(/[/\\]/).pop() || ''))).join(',')}]`; isMulti = parsed.length > 1; } } catch(e){}
+      const union = isMulti ? ', union_by_name=true' : '';
+      generatedSql = `SELECT * FROM read_csv_auto(${arg}${union}, header=true, ignore_errors=true, all_varchar=true)`;
       break;
     }
     case 'excelInput': {
       if (!node.data.file) { generatedSql = `SELECT 'No file selected' AS status`; break; }
-      let fileStr = String(node.data.file);
-      try {
-        const parsed = JSON.parse(fileStr);
-        if (Array.isArray(parsed) && parsed.length > 0) fileStr = parsed[0];
-      } catch(e) {}
-      const xlFile = fileStr.replace(/\\/g, '/');
-      if (xlFile.toLowerCase().includes('.csv')) {
-        generatedSql = `SELECT * FROM read_csv_auto(${escapeStr(xlFile)}, union_by_name=true, header=true, ignore_errors=true, all_varchar=true, null_padding=true)`;
+      const file = String(node.data.file);
+      let isMulti = false;
+      let arg = escapeStr((file.split(/[/\\]/).pop() || ''));
+      let allCsv = arg.toLowerCase().includes('.csv');
+      
+      try { 
+        const parsed = JSON.parse(file); 
+        if(Array.isArray(parsed) && parsed.length > 0) { 
+          arg = `[${parsed.map((p: string) => escapeStr((p.split(/[/\\]/).pop() || ''))).join(',')}]`; 
+          isMulti = parsed.length > 1; 
+          allCsv = parsed.every((p: string) => p.toLowerCase().includes('.csv'));
+        } 
+      } catch(e){}
+
+      if (allCsv) {
+        const union = isMulti ? ', union_by_name=true' : '';
+        generatedSql = `SELECT * FROM read_csv_auto(${arg}${union}, header=true, ignore_errors=true, all_varchar=true)`;
       } else {
-        generatedSql = `SELECT * FROM st_read(${escapeStr(xlFile)}, open_options=['HEADERS=FORCE'])`;
+        // Fallback for st_read which only supports single files
+        let singleFile = arg;
+        try { const parsed = JSON.parse(file); if(Array.isArray(parsed) && parsed.length > 0) singleFile = escapeStr((parsed[0].split(/[/\\]/).pop() || '')); } catch(e){}
+        generatedSql = `SELECT * FROM st_read(${singleFile}, open_options=['HEADERS=FORCE'])`;
       }
       break;
     }
@@ -72,18 +123,22 @@ export function generateNodeSQL(node: any, edges: any[]): string {
     case 'xmlInput': {
       const file = String(node.data.file || node.data.url || '');
       if (!file) { generatedSql = `SELECT 'No source provided' AS status`; break; }
-      let arg = escapeStr(file.replace(/\\/g, '/'));
-      try { const parsed = JSON.parse(file); if(Array.isArray(parsed)) arg = `[${parsed.map((p: string) => escapeStr(p.replace(/\\/g, '/'))).join(',')}]`; } catch(e){}
-      generatedSql = `SELECT * FROM read_json_auto(${arg}, union_by_name=true)`; 
+      let arg = escapeStr((file.split(/[/\\]/).pop() || ''));
+      let isMulti = false;
+      try { const parsed = JSON.parse(file); if(Array.isArray(parsed)) { arg = `[${parsed.map((p: string) => escapeStr((p.split(/[/\\]/).pop() || ''))).join(',')}]`; isMulti = parsed.length > 1; } } catch(e){}
+      const union = isMulti ? ', union_by_name=true' : '';
+      generatedSql = `SELECT * FROM read_json_auto(${arg}${union})`; 
       break;
     }
     case 'parquetInput': 
     case 'featherInput': {
       const pFile = String(node.data.file || '');
       if (!pFile) { generatedSql = `SELECT 'No file selected' AS status`; break; }
-      let pArg = escapeStr(pFile.replace(/\\/g, '/'));
-      try { const parsed = JSON.parse(pFile); if(Array.isArray(parsed)) pArg = `[${parsed.map((p: string) => escapeStr(p.replace(/\\/g, '/'))).join(',')}]`; } catch(e){}
-      generatedSql = `SELECT * FROM read_parquet(${pArg}, union_by_name=true)`; 
+      let pArg = escapeStr((pFile.split(/[/\\]/).pop() || ''));
+      let isMulti = false;
+      try { const parsed = JSON.parse(pFile); if(Array.isArray(parsed)) { pArg = `[${parsed.map((p: string) => escapeStr((p.split(/[/\\]/).pop() || ''))).join(',')}]`; isMulti = parsed.length > 1; } } catch(e){}
+      const union = isMulti ? ', union_by_name=true' : '';
+      generatedSql = `SELECT * FROM read_parquet(${pArg}${union})`; 
       break;
     }
 
@@ -103,7 +158,7 @@ export function generateNodeSQL(node: any, edges: any[]): string {
     case 'fillMissing': 
       if (!node.data.column) { generatedSql = passThrough; break; }
       const defVal = node.data.defaultVal || '0';
-      const safeDefVal = isNaN(Number(defVal)) ? escapeStr(defVal) : defVal;
+      const safeDefVal = escapeStr(defVal);
       generatedSql = `SELECT *, COALESCE(${safeCol(node.data.column)}, ${safeDefVal}) AS ${safeNewCol(node.data.newCol, 'filled_val')} FROM ${parent1}`; 
       break;
     case 'typeConversion': 
@@ -141,17 +196,24 @@ export function generateNodeSQL(node: any, edges: any[]): string {
       generatedSql = `SELECT * RENAME (${safeCol(node.data.oldCol)} AS ${safeCol(node.data.newCol)}) FROM ${parent1}`; 
       break;
     
-    case 'filterRows': 
+    case 'filterRows': {
       if (!node.data.filterCol) { generatedSql = passThrough; break; }
       const fOp = node.data.filterOp || '=';
       let fVal = String(node.data.filterVal || '');
+      let leftSide = safeCol(node.data.filterCol);
       if (fOp.includes('NULL')) {
-         generatedSql = `SELECT * FROM ${parent1} WHERE ${safeCol(node.data.filterCol)} ${fOp}`;
+         generatedSql = `SELECT * FROM ${parent1} WHERE ${leftSide} ${fOp}`;
       } else {
-         const safeFVal = isNaN(Number(fVal)) ? escapeStr(fVal) : fVal;
-         generatedSql = `SELECT * FROM ${parent1} WHERE ${safeCol(node.data.filterCol)} ${fOp} ${safeFVal}`; 
+         if (!fVal.startsWith("'") && !isNaN(Number(fVal)) && fVal.trim() !== '') {
+             leftSide = `try_cast(${leftSide} AS DOUBLE)`;
+         } else {
+             if (!fVal.startsWith("'")) fVal = escapeStr(fVal);
+         }
+         const safeFVal = sanitizeFormula(fVal);
+         generatedSql = `SELECT * FROM ${parent1} WHERE ${leftSide} ${fOp} ${safeFVal}`; 
       }
       break;
+    }
     case 'sortRows': 
       if (!node.data.column) { generatedSql = passThrough; break; }
       generatedSql = `SELECT * FROM ${parent1} ORDER BY ${safeCol(node.data.column)} ${node.data.direction || 'ASC'}`; 
@@ -173,7 +235,8 @@ export function generateNodeSQL(node: any, edges: any[]): string {
     
     case 'conditionalLogic': 
       if (!node.data.condition) { generatedSql = passThrough; break; }
-      generatedSql = `SELECT *, CASE WHEN ${node.data.condition} THEN ${escapeStr(node.data.trueVal || 'true')} ELSE ${escapeStr(node.data.falseVal || 'false')} END AS ${safeNewCol(node.data.newCol, 'case_val')} FROM ${parent1}`; 
+      const safeCond = sanitizeFormula(node.data.condition);
+      generatedSql = `SELECT *, CASE WHEN ${safeCond} THEN ${escapeStr(node.data.trueVal || 'true')} ELSE ${escapeStr(node.data.falseVal || 'false')} END AS ${safeNewCol(node.data.newCol, 'case_val')} FROM ${parent1}`; 
       break;
     case 'splitPart': 
       if (!node.data.column) { generatedSql = passThrough; break; }
@@ -186,19 +249,20 @@ export function generateNodeSQL(node: any, edges: any[]): string {
     
     case 'mathFormula': 
       if (!node.data.formula) { generatedSql = passThrough; break; }
-      generatedSql = `SELECT *, (${node.data.formula}) AS ${safeNewCol(node.data.newCol, 'calc_val')} FROM ${parent1}`; 
+      const safeFormula = sanitizeFormula(node.data.formula);
+      generatedSql = `SELECT *, (${safeFormula}) AS ${safeNewCol(node.data.newCol, 'calc_val')} FROM ${parent1}`; 
       break;
     case 'extractYear': 
       if (!node.data.column) { generatedSql = passThrough; break; }
       generatedSql = `SELECT *, EXTRACT(YEAR FROM CAST(${safeCol(node.data.column)} AS TIMESTAMP)) AS ${safeNewCol(node.data.newCol, 'year_val')} FROM ${parent1}`; 
       break;
     
-    case 'innerJoin': generatedSql = `SELECT * FROM ${parent1} INNER JOIN ${parent2} ON ${node.data.joinCondition || '1=1'}`; break;
-    case 'leftJoin': generatedSql = `SELECT * FROM ${parent1} LEFT JOIN ${parent2} ON ${node.data.joinCondition || '1=1'}`; break;
-    case 'selfJoin': generatedSql = `SELECT t1.*, t2.* FROM ${parent1} t1 INNER JOIN ${parent1} t2 ON ${node.data.joinCondition || '1=1'}`; break;
-    case 'fullOuterJoin': generatedSql = `SELECT * FROM ${parent1} FULL OUTER JOIN ${parent2} ON ${node.data.joinCondition || '1=1'}`; break;
-    case 'antiJoin': generatedSql = `SELECT * FROM ${parent1} WHERE NOT EXISTS (SELECT 1 FROM ${parent2} WHERE ${node.data.joinCondition || '1=1'})`; break;
-    case 'semiJoin': generatedSql = `SELECT * FROM ${parent1} WHERE EXISTS (SELECT 1 FROM ${parent2} WHERE ${node.data.joinCondition || '1=1'})`; break;
+    case 'innerJoin': generatedSql = `SELECT * FROM ${parent1} INNER JOIN ${parent2} ON ${sanitizeFormula(node.data.joinCondition) || '1=1'}`; break;
+    case 'leftJoin': generatedSql = `SELECT * FROM ${parent1} LEFT JOIN ${parent2} ON ${sanitizeFormula(node.data.joinCondition) || '1=1'}`; break;
+    case 'selfJoin': generatedSql = `SELECT t1.*, t2.* FROM ${parent1} t1 INNER JOIN ${parent1} t2 ON ${sanitizeFormula(node.data.joinCondition) || '1=1'}`; break;
+    case 'fullOuterJoin': generatedSql = `SELECT * FROM ${parent1} FULL OUTER JOIN ${parent2} ON ${sanitizeFormula(node.data.joinCondition) || '1=1'}`; break;
+    case 'antiJoin': generatedSql = `SELECT * FROM ${parent1} WHERE NOT EXISTS (SELECT 1 FROM ${parent2} WHERE ${sanitizeFormula(node.data.joinCondition) || '1=1'})`; break;
+    case 'semiJoin': generatedSql = `SELECT * FROM ${parent1} WHERE EXISTS (SELECT 1 FROM ${parent2} WHERE ${sanitizeFormula(node.data.joinCondition) || '1=1'})`; break;
     case 'unionAll': generatedSql = `SELECT * FROM ${parent1} UNION ALL SELECT * FROM ${parent2}`; break;
     case 'intersectNodes': generatedSql = `SELECT * FROM ${parent1} INTERSECT SELECT * FROM ${parent2}`; break;
     case 'exceptNodes': generatedSql = `SELECT * FROM ${parent1} EXCEPT SELECT * FROM ${parent2}`; break;
@@ -247,6 +311,58 @@ export function generateNodeSQL(node: any, edges: any[]): string {
     case 'timezoneConvert': 
       if (!node.data.column) { generatedSql = passThrough; break; }
       generatedSql = `SELECT *, CAST(${safeCol(node.data.column)} AS TIMESTAMP) AT TIME ZONE ${escapeStr(node.data.tz || 'UTC')} AS ${safeNewCol(node.data.newCol, 'tz_date')} FROM ${parent1}`; 
+      break;
+
+    // Phase 2: Advanced Math & Analytical
+    case 'runningTotal':
+      if (!node.data.column || !node.data.orderCol) { generatedSql = passThrough; break; }
+      generatedSql = `SELECT *, SUM(${safeCol(node.data.column)}) OVER (PARTITION BY ${safeCol(node.data.partCol, '1')} ORDER BY ${safeCol(node.data.orderCol)}) AS ${safeNewCol(node.data.newCol, 'running_total')} FROM ${parent1}`;
+      break;
+    case 'movingAverage':
+      if (!node.data.column || !node.data.orderCol) { generatedSql = passThrough; break; }
+      generatedSql = `SELECT *, AVG(${safeCol(node.data.column)}) OVER (PARTITION BY ${safeCol(node.data.partCol, '1')} ORDER BY ${safeCol(node.data.orderCol)} ROWS BETWEEN ${Number(node.data.windowSize) || 3} PRECEDING AND CURRENT ROW) AS ${safeNewCol(node.data.newCol, 'moving_avg')} FROM ${parent1}`;
+      break;
+    case 'leadLag':
+      if (!node.data.column || !node.data.orderCol) { generatedSql = passThrough; break; }
+      {
+         const offset = Number(node.data.offset) || 1;
+         const func = offset < 0 ? 'LAG' : 'LEAD';
+         generatedSql = `SELECT *, ${func}(${safeCol(node.data.column)}, ${Math.abs(offset)}) OVER (PARTITION BY ${safeCol(node.data.partCol, '1')} ORDER BY ${safeCol(node.data.orderCol)}) AS ${safeNewCol(node.data.newCol, 'lead_lag')} FROM ${parent1}`;
+      }
+      break;
+    case 'rank':
+      if (!node.data.orderCol) { generatedSql = passThrough; break; }
+      {
+         const rFunc = node.data.denseRank ? 'DENSE_RANK()' : 'RANK()';
+         generatedSql = `SELECT *, ${rFunc} OVER (PARTITION BY ${safeCol(node.data.partCol, '1')} ORDER BY ${safeCol(node.data.orderCol)}) AS ${safeNewCol(node.data.newCol, 'rank')} FROM ${parent1}`;
+      }
+      break;
+    case 'median':
+      if (!node.data.column) { generatedSql = passThrough; break; }
+      generatedSql = `SELECT *, MEDIAN(${safeCol(node.data.column)}) OVER (PARTITION BY ${safeCol(node.data.partCol, '1')}) AS ${safeNewCol(node.data.newCol, 'median')} FROM ${parent1}`;
+      break;
+    case 'stdDev':
+      if (!node.data.column) { generatedSql = passThrough; break; }
+      generatedSql = `SELECT *, STDDEV_SAMP(${safeCol(node.data.column)}) OVER (PARTITION BY ${safeCol(node.data.partCol, '1')}) AS ${safeNewCol(node.data.newCol, 'stddev')} FROM ${parent1}`;
+      break;
+    case 'normalize':
+      if (!node.data.column) { generatedSql = passThrough; break; }
+      generatedSql = `SELECT *, (${safeCol(node.data.column)} - MIN(${safeCol(node.data.column)}) OVER (PARTITION BY ${safeCol(node.data.partCol, '1')})) / NULLIF(MAX(${safeCol(node.data.column)}) OVER (PARTITION BY ${safeCol(node.data.partCol, '1')}) - MIN(${safeCol(node.data.column)}) OVER (PARTITION BY ${safeCol(node.data.partCol, '1')}), 0) AS ${safeNewCol(node.data.newCol, 'normalized')} FROM ${parent1}`;
+      break;
+    case 'hash':
+      if (!node.data.column) { generatedSql = passThrough; break; }
+      generatedSql = `SELECT *, MD5(CAST(${safeCol(node.data.column)} AS VARCHAR)) AS ${safeNewCol(node.data.newCol, 'hash')} FROM ${parent1}`;
+      break;
+    case 'timezone':
+      if (!node.data.column) { generatedSql = passThrough; break; }
+      generatedSql = `SELECT *, CAST(${safeCol(node.data.column)} AS TIMESTAMP) AT TIME ZONE 'UTC' AT TIME ZONE ${escapeStr(node.data.tz || 'America/New_York')} AS ${safeNewCol(node.data.newCol, 'tz_date')} FROM ${parent1}`;
+      break;
+    case 'fiscalDate':
+      if (!node.data.column) { generatedSql = passThrough; break; }
+      {
+         const startMonth = Number(node.data.fiscalStartMonth) || 10;
+         generatedSql = `SELECT *, CASE WHEN EXTRACT(MONTH FROM CAST(${safeCol(node.data.column)} AS TIMESTAMP)) >= ${startMonth} THEN EXTRACT(YEAR FROM CAST(${safeCol(node.data.column)} AS TIMESTAMP)) + 1 ELSE EXTRACT(YEAR FROM CAST(${safeCol(node.data.column)} AS TIMESTAMP)) END AS ${safeNewCol(node.data.newCol, 'fiscal_year')} FROM ${parent1}`;
+      }
       break;
 
     case 'groupBy': 
@@ -330,6 +446,20 @@ export function generateNodeSQL(node: any, edges: any[]): string {
       const sc = safeCol(node.data.column);
       generatedSql = `SELECT *, (CAST(${sc} AS DOUBLE) - AVG(CAST(${sc} AS DOUBLE)) OVER()) / NULLIF(STDDEV(CAST(${sc} AS DOUBLE)) OVER(), 0) AS ${safeNewCol(node.data.newCol, 'standardized_val')} FROM ${parent1}`; 
       break;
+
+    case 'outlierDetection': 
+      if (!node.data.column) { generatedSql = passThrough; break; }
+      const oc = safeCol(node.data.column);
+      const zscore = `(CAST(${oc} AS DOUBLE) - AVG(CAST(${oc} AS DOUBLE)) OVER()) / NULLIF(STDDEV(CAST(${oc} AS DOUBLE)) OVER(), 0)`;
+      generatedSql = `SELECT *, CASE WHEN ABS(${zscore}) > 3 THEN true ELSE false END AS is_outlier FROM ${parent1}`;
+      break;
+
+    case 'duplicateAnalysis':
+      if (!node.data.columns) { generatedSql = passThrough; break; }
+      const dupCols = String(node.data.columns).split(',').map(c => safeCol(c.trim())).filter(Boolean).join(', ');
+      if (!dupCols) { generatedSql = passThrough; break; }
+      generatedSql = `SELECT ${dupCols}, COUNT(*) AS duplicate_count FROM ${parent1} GROUP BY ${dupCols} ORDER BY duplicate_count DESC`;
+      break;
     case 'regexMatch': 
       if (!node.data.column) { generatedSql = passThrough; break; }
       generatedSql = `SELECT *, regexp_matches(CAST(${safeCol(node.data.column)} AS VARCHAR), ${escapeStr(node.data.pattern || '.*')}) AS ${safeNewCol(node.data.newCol, 'is_match')} FROM ${parent1}`; 
@@ -340,10 +470,17 @@ export function generateNodeSQL(node: any, edges: any[]): string {
         generatedSql = parents.length ? passThrough : `SELECT 'Disconnected' AS status`;
       }
   }
-  return generatedSql;
+  // Basic variable substitution for any custom text/sql parameters
+  let finalSql = generatedSql;
+  Object.keys(variables).forEach(key => {
+    const regex = new RegExp(`\\$\\{${key}\\}`, 'g');
+    finalSql = finalSql.replace(regex, variables[key]);
+  });
+  
+  return finalSql;
 }
 
-export function generateProductionSQL(nodes: any[], edges: any[]): string {
+export function generateProductionSQL(nodes: any[], edges: any[], variables: Record<string, string> = {}): string {
   if (!nodes || nodes.length === 0) return '-- No nodes in pipeline';
   
   const inDegree: Record<string, number> = {};
@@ -388,7 +525,7 @@ export function generateProductionSQL(nodes: any[], edges: any[]): string {
     const node = nodes.find(n => n.id === nodeId);
     if (!node) continue;
     
-    let rawNodeSql = generateNodeSQL(node, edges);
+    let rawNodeSql = generateNodeSQL(node, edges, variables);
     const safeNodeName = `node_${nodeId.replace(/-/g, '_')}`;
     
     // Split for dataQuality nodes

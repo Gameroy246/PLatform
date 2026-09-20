@@ -1,51 +1,61 @@
-import { NextResponse } from "next/server";
+import { NextResponse } from "next/server"; // Auto-reload trigger
 import duckdb from "duckdb";
 import fs from "fs";
 import path from "path";
 import os from "os";
+import { mapDuckDBError } from "../../../lib/errorMapper";
+import { getDb, resetDb, runExec } from "../../../lib/duckdb";
 
-// Map workspace to OS temporary directory for Render/Vercel compatibility
-const WORKSPACE_DIR = path.join(os.tmpdir(), "LocalDataArchitect_Workspace");
+// Persistent Database Directory
+const WORKSPACE_DIR = path.join(os.homedir(), ".architect");
 
 export async function POST(req: Request) {
-  let allTempFiles: string[] = [];
   try {
-    // Ensure workspace exists to prevent config crash
-    if (!fs.existsSync(WORKSPACE_DIR)) {
-      fs.mkdirSync(WORKSPACE_DIR, { recursive: true });
+    const { getSession } = await import('@/lib/auth');
+    const session = await getSession();
+    if (session?.role === 'VIEWER') {
+       return NextResponse.json({ error: "Permission denied. Viewers cannot execute pipelines." }, { status: 403 });
     }
 
-    // Parse Pipeline Nodes and Edges
     const { nodes, edges, output_format = 'csv' } = await req.json();
     if (!nodes || !Array.isArray(nodes)) {
       return NextResponse.json({ error: "Invalid payload." }, { status: 400 });
     }
 
-    // Initialize Secure Sandboxed DuckDB
-    const db = new duckdb.Database(':memory:', {
-      "allow_unsigned_extensions": "false"
-    });
-
+    const db = await getDb();
     const conn = db.connect();
 
-    // Enforce Resource Exhaustion Limits (512MB Server Profile)
-    conn.exec("PRAGMA memory_limit='384MB'");
-    conn.exec("PRAGMA threads=1");
+    await runExec(conn, `SET File_Search_Path='${WORKSPACE_DIR.replace(/\\/g, '/')}'`);
 
     // Load spatial extension only if pipeline uses Excel input (st_read)
     const needsSpatial = nodes.some((n: any) => n.sql?.includes('st_read'));
     if (needsSpatial) {
       try {
-        conn.exec("INSTALL spatial");
-        conn.exec("LOAD spatial");
-      } catch(e) { /* extension may already be loaded */ }
+        await runExec(conn, "INSTALL spatial; LOAD spatial;");
+      } catch(e) { }
+    }
+
+    // Ecosystem Extensions
+    const extensionsToLoad = new Set<string>();
+    nodes.forEach((n: any) => {
+      if (n.sql?.includes('mysql_scan')) extensionsToLoad.add('mysql');
+      if (n.sql?.includes('postgres_scan')) extensionsToLoad.add('postgres');
+      if (n.sql?.includes('sqlite_scan')) extensionsToLoad.add('sqlite');
+      if (n.sql?.includes('read_json_auto(') && n.sql?.includes('http')) extensionsToLoad.add('httpfs');
+    });
+
+    for (const ext of extensionsToLoad) {
+      try {
+        await runExec(conn, `INSTALL ${ext}; LOAD ${ext};`);
+      } catch(e) { }
     }
 
     const logs: string[] = [];
     const startTime = Date.now();
     let finalNodeId = "";
+    const nodeMetrics: Record<string, { duration_ms: number, cached: boolean }> = {};
 
-    // Step 1: Topological Sort of the DAG
+    // Topological Sort
     const inDegree: Record<string, number> = {};
     const adjList: Record<string, string[]> = {};
     const nodeMap: Record<string, string> = {};
@@ -53,8 +63,7 @@ export async function POST(req: Request) {
     nodes.forEach((n: any) => {
       inDegree[n.id] = 0;
       adjList[n.id] = [];
-      let sql = n.sql;
-      nodeMap[n.id] = sql;
+      nodeMap[n.id] = n.sql;
     });
 
     edges?.forEach((e: any) => {
@@ -80,193 +89,135 @@ export async function POST(req: Request) {
     }
 
     if (sortedNodes.length !== nodes.length) {
-      return NextResponse.json({ error: "Invalid Pipeline: Circular dependency detected. Nodes cannot form a closed loop." }, { status: 400 });
+      return NextResponse.json({ error: "Invalid Pipeline: Circular dependency detected." }, { status: 400 });
     }
 
-    // Reverse adjacency list for easy upstream traversal (used for caching)
-    const revAdjList: Record<string, string[]> = {};
-    edges?.forEach((e: any) => {
-      if (!revAdjList[e.target]) revAdjList[e.target] = [];
-      revAdjList[e.target].push(e.source);
-    });
-
-    const nodeHashes: Record<string, string> = {};
-
-    // Step 2: Execute the DAG sequentially in topological order
     for (const nodeId of sortedNodes) {
       const nodeStart = Date.now();
       finalNodeId = nodeId;
       let sql = nodeMap[nodeId] || "SELECT 'Disconnected' AS status";
-      
-      const { generateNodeHash, getCacheFilePath, isEncryptedCached, getEncryptedCacheFilePath } = await import('@/lib/cachingEngine');
-      const { encryptFile, decryptFile } = await import('@/lib/encryption');
-      
-      const parentHashes = (revAdjList[nodeId] || []).map(p => nodeHashes[p]);
-      const nodeHash = generateNodeHash(sql, parentHashes);
-      nodeHashes[nodeId] = nodeHash;
-
       const safeNodeName = `node_${nodeId.replace(/-/g, '_')}`;
-      
-      if (isEncryptedCached(nodeHash)) {
-        logs.push(`[${new Date().toISOString()}] Cache Hit for Node ${nodeId}. Loading from Vault...`);
-        const encCachePath = getEncryptedCacheFilePath(nodeHash);
-        const tempCachePath = getCacheFilePath(nodeHash + "_temp.parquet");
-        decryptFile(encCachePath, tempCachePath);
-        allTempFiles.push(tempCachePath);
-        
+
+      // Handle custom Data Quality split node
+      if (sql.includes('___LDA_DATA_QUALITY_SPLIT___')) {
+        const parts = sql.split('___LDA_DATA_QUALITY_SPLIT___');
+        const passSql = parts[0];
+        const failSql = parts[1];
         await new Promise<void>((resolve, reject) => {
-          conn.exec(`CREATE TEMP TABLE ${safeNodeName} AS SELECT * FROM read_parquet('${tempCachePath.replace(/\\/g, '/')}')`, (err: any) => {
+          conn.exec(`CREATE OR REPLACE TABLE ${safeNodeName} AS ${passSql}`, (err) => {
+            if (err) return reject(err);
+            conn.exec(`CREATE OR REPLACE TABLE ${safeNodeName}_error AS ${failSql}`, (err2) => {
+              if (err2) return reject(err2);
+              resolve();
+            });
+          });
+        });
+      } else {
+        await new Promise<void>((resolve, reject) => {
+          conn.exec(`CREATE OR REPLACE TABLE ${safeNodeName} AS ${sql}`, (err: any) => {
             if (err) reject(err); else resolve();
           });
         });
-
-        // Load error cache if exists
-        const encErrorCachePath = getEncryptedCacheFilePath(nodeHash + "_error");
-        if (fs.existsSync(encErrorCachePath)) {
-           const tempErrorCachePath = getCacheFilePath(nodeHash + "_error_temp.parquet");
-           decryptFile(encErrorCachePath, tempErrorCachePath);
-           allTempFiles.push(tempErrorCachePath);
-           await new Promise<void>((resolve, reject) => {
-             conn.exec(`CREATE TEMP TABLE ${safeNodeName}_error AS SELECT * FROM read_parquet('${tempErrorCachePath.replace(/\\/g, '/')}')`, (err: any) => {
-               if (err) reject(err); else resolve();
-             });
-           });
-        }
-
-      } else {
-        const { decryptSqlPaths } = await import('@/lib/decryptSqlPaths');
-        const { modifiedSql, tempFiles } = decryptSqlPaths(sql);
-        allTempFiles.push(...tempFiles);
-        
-        const sqlParts = modifiedSql.split('___LDA_DATA_QUALITY_SPLIT___');
-        
-        logs.push(`[${new Date().toISOString()}] Executing: CREATE TEMP TABLE ${safeNodeName} AS (...)`);
-        console.log(`[API RUN] Executing Node ${nodeId}:\nCREATE TEMP TABLE ${safeNodeName} AS (${sqlParts[0]})`);
-        await new Promise<void>((resolve, reject) => {
-          conn.exec(`CREATE TEMP TABLE ${safeNodeName} AS (${sqlParts[0]})`, (err: any) => {
-            if (err) reject(new Error(`Failed at Node ${nodeId}: ${err.message}`)); else resolve();
-          });
-        });
-
-        if (sqlParts.length > 1) {
-          logs.push(`[${new Date().toISOString()}] Executing: CREATE TEMP TABLE ${safeNodeName}_error AS (...)`);
-          await new Promise<void>((resolve, reject) => {
-            conn.exec(`CREATE TEMP TABLE ${safeNodeName}_error AS (${sqlParts[1]})`, (err: any) => {
-              if (err) reject(new Error(`Failed at Error Stream ${nodeId}: ${err.message}`)); else resolve();
-            });
-          });
-        }
-
-        // Save Cache
-        const rawCachePath = getCacheFilePath(nodeHash);
-        await new Promise<void>((resolve, reject) => {
-            conn.exec(`COPY (SELECT * FROM ${safeNodeName}) TO '${rawCachePath.replace(/\\/g, '/')}' (FORMAT PARQUET)`, (err: any) => {
-                if (err) reject(err); else resolve();
-            });
-        });
-        encryptFile(rawCachePath, getEncryptedCacheFilePath(nodeHash));
-        fs.unlinkSync(rawCachePath);
-
-        // Save Error Cache if exists
-        if (sqlParts.length > 1) {
-          const rawErrorCachePath = getCacheFilePath(nodeHash + "_error");
-          await new Promise<void>((resolve, reject) => {
-              conn.exec(`COPY (SELECT * FROM ${safeNodeName}_error) TO '${rawErrorCachePath.replace(/\\/g, '/')}' (FORMAT PARQUET)`, (err: any) => {
-                  if (err) reject(err); else resolve();
-              });
-          });
-          encryptFile(rawErrorCachePath, getEncryptedCacheFilePath(nodeHash + "_error"));
-          fs.unlinkSync(rawErrorCachePath);
-        }
       }
+
+      nodeMetrics[nodeId] = { duration_ms: Date.now() - nodeStart, cached: false };
+      logs.push(`[${new Date().toISOString()}] Executed Node ${nodeId} (${nodeMetrics[nodeId].duration_ms}ms)`);
     }
 
     if (!finalNodeId) {
-      throw new Error("Pipeline is empty or disconnected.");
+      return NextResponse.json({ message: "Empty pipeline" });
     }
 
-    // Step 3: Fetch result from the final node in the DAG
-    const finalSafeName = `node_${finalNodeId.replace(/-/g, '_')}`;
-    const result = await new Promise<any[]>((resolve, reject) => {
-      conn.all(`SELECT * FROM ${finalSafeName} LIMIT 500`, (err: any, res: any) => {
-        if (err) reject(err);
-        else resolve(res);
-      });
-    });
-
-    // Get actual total row count (not limited)
-    const totalRowCount = await new Promise<number>((resolve, reject) => {
-      conn.all(`SELECT COUNT(*) AS cnt FROM ${finalSafeName}`, (err: any, res: any) => {
-        if (err) resolve(result.length);
-        else resolve(Number(res[0]?.cnt || result.length));
-      });
-    });
-
-    // Step 4: Export the final result to requested format
-    const ext = output_format.toLowerCase();
-    const outputFilename = `output_${Date.now()}.${ext}`;
-    const outputPath = path.join(WORKSPACE_DIR, outputFilename);
-    await new Promise<void>((resolve, reject) => {
-      let copyQuery = `COPY (SELECT * FROM ${finalSafeName}) TO '${outputPath}' (HEADER, DELIMITER ',')`;
-      if (ext === 'parquet') copyQuery = `COPY (SELECT * FROM ${finalSafeName}) TO '${outputPath}' (FORMAT PARQUET)`;
-      if (ext === 'json') copyQuery = `COPY (SELECT * FROM ${finalSafeName}) TO '${outputPath}' (FORMAT JSON, ARRAY TRUE)`;
-      
-      conn.exec(copyQuery, (err: any) => {
-        if (err) reject(err);
-        else resolve();
-      });
-    });
-
-    const endTime = Date.now();
-    const duration = endTime - startTime;
-    logs.push(`[${new Date().toISOString()}] Pipeline completed in ${duration}ms`);
-
-    // Generate Explain Plan
-    let explainPlanText = '';
+    const finalTableName = `node_${finalNodeId.replace(/-/g, '_')}`;
+    
+    let summary: any[] = [];
     try {
-      const explainResult = await new Promise<any[]>((resolve, reject) => {
-        conn.all(`EXPLAIN SELECT * FROM ${finalSafeName}`, (err: any, res: any) => {
-          if (err) reject(err);
-          else resolve(res);
+      summary = await new Promise<any[]>((resolve) => {
+        conn.all(`SUMMARIZE SELECT * FROM ${finalTableName}`, (err, res) => {
+          if (err) resolve([]); else resolve(res);
         });
       });
-      explainPlanText = explainResult.map((row: any) => Object.values(row).join(' ')).join('\n');
-    } catch (e) {
-      explainPlanText = 'Failed to generate explain plan.';
-    }
+    } catch(e) {}
 
-    // Get column metadata for the output
     let columns: any[] = [];
     try {
-      const colResult = await new Promise<any[]>((resolve, reject) => {
-        conn.all(`DESCRIBE ${finalSafeName}`, (err: any, res: any) => {
-          if (err) reject(err);
-          else resolve(res);
+      columns = await new Promise<any[]>((resolve) => {
+        conn.all(`DESCRIBE SELECT * FROM ${finalTableName}`, (err, res) => {
+          if (err) resolve([]); else resolve(res);
         });
       });
-      columns = colResult.map((row: any) => ({ name: row.column_name, type: row.column_type }));
     } catch (e) {}
 
-    const serializeObj = (obj: any) => JSON.parse(JSON.stringify(obj, (k, v) => typeof v === 'bigint' ? Number(v) : v));
-    
-    return NextResponse.json(serializeObj({ 
-      success: true, 
-      message: "Pipeline executed successfully.",
-      metadata: { row_count: totalRowCount, sample_count: result.length, column_count: columns.length, columns, memory_limit: "384MB", threads: 1, duration_ms: duration },
-      sample_result: result,
-      final_sql: nodeMap[finalNodeId] || '',
+    let rowCount = 0;
+    try {
+      const countRes: any = await new Promise((resolve) => {
+        conn.all(`SELECT COUNT(*) as c FROM ${finalTableName}`, (err, res) => {
+           if (err) resolve([{c:0}]); else resolve(res);
+        });
+      });
+      rowCount = Number(countRes[0].c);
+    } catch(e) {}
+
+    const previewData = await new Promise<any[]>((resolve, reject) => {
+      conn.all(`SELECT * FROM ${finalTableName} LIMIT 100`, (err, res) => {
+        if (err) reject(err); else resolve(res);
+      });
+    });
+
+    let downloadUrl = null;
+    try {
+      const outputFilename = `output_${Date.now()}.${output_format}`;
+      const outputPath = path.join(WORKSPACE_DIR, outputFilename);
+      
+      let copyQuery = `COPY (SELECT * FROM ${finalTableName}) TO '${outputPath.replace(/\\/g, '/')}'`;
+      if (output_format === 'csv') copyQuery += ` (HEADER, DELIMITER ',')`;
+      if (output_format === 'parquet') copyQuery += ` (FORMAT PARQUET)`;
+      if (output_format === 'json') copyQuery += ` (ARRAY TRUE)`;
+
+      await new Promise<void>((resolve, reject) => {
+        conn.exec(copyQuery, (err) => {
+          if (err) reject(err); else resolve();
+        });
+      });
+      downloadUrl = `/api/download?file=${outputFilename}`;
+    } catch (e) {
+      logs.push(`[ERROR] Export failed: ${e}`);
+    }
+
+    const totalDuration = Date.now() - startTime;
+    logs.push(`[${new Date().toISOString()}] Pipeline finished in ${totalDuration}ms`);
+
+    const node_statuses: Record<string, any> = {};
+    for (const [id, metric] of Object.entries(nodeMetrics)) {
+       node_statuses[id] = { status: 'COMPLETED', duration_ms: (metric as any).duration_ms };
+    }
+
+    const finalSql = nodes.find((n: any) => n.id === finalNodeId)?.sql || '';
+
+    return NextResponse.json({
+      success: true,
+      message: "Pipeline executed successfully",
+      download_url: downloadUrl,
+      sample_result: previewData,
+      final_sql: finalSql,
       logs: logs,
-      explain_plan: explainPlanText,
-      download_url: `/api/download?file=${outputFilename}`
-    }));
+      node_statuses: node_statuses,
+      metadata: {
+        row_count: rowCount,
+        column_count: columns.length,
+        columns: columns.map(c => ({ name: c.column_name, type: c.column_type })),
+        summary,
+        metrics: nodeMetrics,
+        total_duration_ms: totalDuration
+      }
+    });
 
   } catch (error: any) {
-    console.error("API Error:", error);
-    return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
-  } finally {
-    try {
-      const { cleanupTempFiles } = await import('@/lib/decryptSqlPaths');
-      cleanupTempFiles(allTempFiles);
-    } catch(e) {}
+    console.error('[DuckDB Fatal Error /api/run]:', error);
+    const { message, raw, code } = mapDuckDBError(error);
+    if (code === 'CONNECTION_LOST' || code === 'FATAL_DATA_CORRUPTION') {
+      resetDb();
+    }
+    return NextResponse.json({ error: message, details: raw, code }, { status: 500 });
   }
 }

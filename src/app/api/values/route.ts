@@ -1,145 +1,42 @@
 import { NextResponse } from "next/server";
-import duckdb from "duckdb";
+import { getDb, resetDb } from "../../../lib/duckdb";
 
 export async function POST(req: Request) {
-  let allTempFiles: string[] = [];
   try {
-    const { nodes, edges, targetNodeId, targetColumn } = await req.json();
-    if (!nodes || !Array.isArray(nodes) || !targetNodeId || !targetColumn) {
+    const { targetNodeId, targetColumn, edges } = await req.json();
+    if (!targetNodeId || !targetColumn) {
       return NextResponse.json({ error: "Invalid payload." }, { status: 400 });
     }
 
-    const db = new duckdb.Database(':memory:', {
-      "allow_unsigned_extensions": "false"
-    });
+    const db = await getDb();
     const conn = db.connect();
 
-    conn.exec("PRAGMA memory_limit='384MB'");
-    conn.exec("PRAGMA threads=1");
-
-    const inDegree: Record<string, number> = {};
-    const adjList: Record<string, string[]> = {};
-    const nodeMap: Record<string, string> = {};
-
-    nodes.forEach((n: any) => {
-      inDegree[n.id] = 0;
-      adjList[n.id] = [];
-      nodeMap[n.id] = n.sql;
-    });
-
-    edges?.forEach((e: any) => {
-      if (adjList[e.source] && inDegree[e.target] !== undefined) {
-        adjList[e.source].push(e.target);
-        inDegree[e.target]++;
-      }
-    });
-
-    const queue: string[] = [];
-    Object.keys(inDegree).forEach(id => {
-      if (inDegree[id] === 0) queue.push(id);
-    });
-
-    const sortedNodes: string[] = [];
-    while (queue.length > 0) {
-      const curr = queue.shift()!;
-      sortedNodes.push(curr);
-      adjList[curr]?.forEach(neighbor => {
-        inDegree[neighbor]--;
-        if (inDegree[neighbor] === 0) queue.push(neighbor);
-      });
-    }
-
-    if (sortedNodes.length !== nodes.length) {
-      return NextResponse.json({ error: "Invalid Pipeline: Circular dependency detected." }, { status: 400 });
-    }
-
-    // Get parent of targetNodeId (we assume column values come from the first parent)
     const parents = (edges || []).filter((e: any) => e.target === targetNodeId);
     if (parents.length === 0) {
       return NextResponse.json({ success: true, values: [] });
     }
 
     const parentId = parents[0].source;
-    const isErrorStream = parents[0].sourceHandle === 'error';
-
-    const upstreamNodes = new Set<string>();
-    const stack = [parentId];
-    upstreamNodes.add(parentId);
-    
-    const revAdjList: Record<string, string[]> = {};
-    edges?.forEach((e: any) => {
-      if (!revAdjList[e.target]) revAdjList[e.target] = [];
-      revAdjList[e.target].push(e.source);
-    });
-
-    while (stack.length > 0) {
-      const curr = stack.pop()!;
-      revAdjList[curr]?.forEach(parent => {
-        if (!upstreamNodes.has(parent)) {
-          upstreamNodes.add(parent);
-          stack.push(parent);
-        }
-      });
+    let safeParentName = `node_${parentId.replace(/-/g, '_')}`;
+    if (parents[0].sourceHandle === 'error') {
+       safeParentName += '_error';
     }
 
-    for (const nodeId of sortedNodes) {
-      if (!upstreamNodes.has(nodeId)) continue;
-      
-      const sql = nodeMap[nodeId];
-      if (!sql || sql === "SELECT 'Disconnected' AS status") continue;
-      
-      const { decryptSqlPaths } = await import('@/lib/decryptSqlPaths');
-      const { modifiedSql, tempFiles } = decryptSqlPaths(sql);
-      allTempFiles.push(...tempFiles);
-      
-      const safeNodeName = `node_${nodeId.replace(/-/g, '_')}`;
-      const sqlParts = modifiedSql.split('___LDA_DATA_QUALITY_SPLIT___');
-      
-      await new Promise<void>((resolve, reject) => {
-        conn.exec(`CREATE TEMP TABLE ${safeNodeName} AS (${sqlParts[0]})`, (err: any) => {
-          if (err) reject(new Error(`Values API Error at Node ${nodeId}: ${err.message}`));
-          else resolve();
-        });
-      });
+    const cleanCol = targetColumn.replace(/"/g, '""');
 
-      if (sqlParts.length > 1) {
-        await new Promise<void>((resolve, reject) => {
-          conn.exec(`CREATE TEMP TABLE ${safeNodeName}_error AS (${sqlParts[1]})`, (err: any) => {
-            if (err) reject(new Error(`Values API Error at Node ${nodeId} (Error): ${err.message}`));
-            else resolve();
-          });
-        });
-      }
-    }
-
-    const parentSafeName = `node_${parentId.replace(/-/g, '_')}${isErrorStream ? '_error' : ''}`;
-    
-    // Fetch top 100 distinct values
-    const distinctValues = await new Promise<any[]>((resolve, reject) => {
-      conn.all(`SELECT DISTINCT "${targetColumn}" AS val FROM ${parentSafeName} WHERE "${targetColumn}" IS NOT NULL LIMIT 100`, (err: any, res: any) => {
-        if (err) reject(err);
-        else resolve(res);
+    const values = await new Promise<any[]>((resolve, reject) => {
+      conn.all(`SELECT DISTINCT "${cleanCol}" as val FROM ${safeParentName} WHERE "${cleanCol}" IS NOT NULL LIMIT 100`, (err, res) => {
+        if (err) {
+             if (err.message.includes("does not exist")) {
+                 return resolve([]);
+             }
+             reject(err);
+        } else resolve(res);
       });
     });
 
-    conn.close();
-    
-    try {
-      const { cleanupTempFiles } = await import('@/lib/decryptSqlPaths');
-      cleanupTempFiles(allTempFiles);
-    } catch(e) {}
-    
-    return NextResponse.json({ 
-      success: true, 
-      values: distinctValues.map(r => r.val)
-    });
-
+    return NextResponse.json({ success: true, values: values.map(v => v.val) });
   } catch (error: any) {
-    try {
-      const { cleanupTempFiles } = await import('@/lib/decryptSqlPaths');
-      cleanupTempFiles(allTempFiles);
-    } catch(e) {}
-    console.error("Values API Error:", error);
-    return NextResponse.json({ error: error.message || "Failed to fetch values." }, { status: 500 });
+    return NextResponse.json({ error: error.message || String(error) }, { status: 500 });
   }
 }

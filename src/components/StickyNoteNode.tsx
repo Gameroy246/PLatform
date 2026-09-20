@@ -1,23 +1,40 @@
 "use client";
-import { StickyNote } from 'lucide-react';
-import { useStore } from '../store';
+import React, { memo } from 'react';
+import { FileText } from 'lucide-react';
 
-export default function StickyNoteNode({ id, data }: { id: string; data: any }) {
-  const updateNodeData = useStore(state => state.updateNodeData);
-
+const StickyNoteNodeComponent = ({ data, selected }: { data: any, selected?: boolean }) => {
   return (
-    <div className="p-3 min-w-[200px] max-w-[280px] rounded-lg bg-yellow-50 dark:bg-yellow-950/40 border border-yellow-200 dark:border-yellow-800 shadow-sm relative text-xs">
-      <div className="flex items-center gap-1.5 font-bold text-yellow-800 dark:text-yellow-400 mb-1.5">
-        <StickyNote className="w-3.5 h-3.5" />
-        <span>Note</span>
+    <div
+      style={{
+        background: data.color || '#fef3c7', // Yellowish sticky note
+        border: selected ? `2px solid #f59e0b` : `1px solid #fcd34d`,
+        borderRadius: 4,
+        padding: '12px',
+        minWidth: 200,
+        boxShadow: selected ? `0 0 0 4px rgba(245, 158, 11, 0.3), var(--node-shadow)` : 'var(--node-shadow)',
+        position: 'relative',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '8px',
+        color: '#92400e', // Dark text for contrast
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 12 }}>
+        <FileText style={{ width: 14, height: 14 }} />
+        Note
       </div>
-      <textarea 
-        value={data.label || ''} 
-        onChange={(e) => updateNodeData(id, { label: e.target.value })}
-        placeholder="Type a documentation note..."
-        rows={3}
-        className="w-full bg-transparent resize-none focus:outline-none text-yellow-900 dark:text-yellow-200 font-sans text-xs leading-relaxed"
-      />
+      <div 
+        style={{ 
+          fontSize: 13, 
+          fontFamily: 'Inter, sans-serif',
+          lineHeight: '1.4',
+          whiteSpace: 'pre-wrap'
+        }}
+      >
+        {data.text || "Double click to edit note..."}
+      </div>
     </div>
   );
 }
+
+export default memo(StickyNoteNodeComponent);

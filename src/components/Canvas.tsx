@@ -101,7 +101,7 @@ const nodeTypes = {
 };
 
 import { useTheme } from 'next-themes';
-export default function Canvas() {
+export default function Canvas({ projectId, onBack }: { projectId?: string | null, onBack?: () => void }) {
   const { nodes, edges, onNodesChange, onEdgesChange, onConnect, onSelectionChange, addNode, updateNodeData, undo, redo, deleteSelected, duplicateSelected, setNodeStatuses, setNodes, setEdges, favorites, setFavorites } = useStore();
   const [activeTab, setActiveTab] = useState<'preview' | 'sql' | 'logs' | 'dashboard'>('sql');
   const [showVariablesModal, setShowVariablesModal] = useState(false);
@@ -130,6 +130,9 @@ export default function Canvas() {
     
     // Phase 6: Load Workspace Layout Persistence
   }, [setNodes, setEdges]);
+
+  const [userRole, setUserRole] = useState<string>('VIEWER');
+  const [userFeatures, setUserFeatures] = useState<string[]>(['all']);
 
   const [isWelcomeModalOpen, setIsWelcomeModalOpen] = useState(true);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
@@ -187,7 +190,20 @@ export default function Canvas() {
   };
 
   const sanitizeEdges = (rawEdges: any[]) => {
-    return (rawEdges || []).map((e: any) => {
+    const NodeItem = ({ type, operation, label }: { type: string, operation: string, label: string }) => {
+    if (!userFeatures.includes('all') && !userFeatures.includes(operation)) return null;
+    return (
+      <div 
+        onDragStart={(e: any) => onDragStart(e, type, operation)} 
+        draggable 
+        className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors"
+      >
+        {label}
+      </div>
+    );
+  };
+
+  return (rawEdges || []).map((e: any) => {
       const clean = { ...e };
       if (['out', 'in1', 'in2'].includes(clean.sourceHandle)) delete clean.sourceHandle;
       if (['out', 'in1', 'in2'].includes(clean.targetHandle)) delete clean.targetHandle;
@@ -697,7 +713,7 @@ export default function Canvas() {
 
   return (
     <div className="flex flex-col w-full h-screen bg-bg text-text font-sans overflow-hidden">
-      <CommandPalette onAddNode={addNodeFromPalette} onRunPipeline={handleRunPipeline} onOpenVariables={() => setShowVariablesModal(true)} />
+      <CommandPalette onAddNode={addNodeFromPalette} onRunPipeline={handleRunPipeline} onOpenVariables={() => setShowVariablesModal(true)} userFeatures={userFeatures} />
       
       {/* Global Variables Modal */}
       {showVariablesModal && (
@@ -852,7 +868,7 @@ export default function Canvas() {
                 </button>
                 {expandedCategories['Favorites'] !== false && (
                   <div className="flex flex-col gap-1 pl-4 pr-2 mt-1">
-                    {favorites.map(fav => (
+                    {favorites.filter(fav => userFeatures.includes('all') || userFeatures.includes(fav)).map(fav => (
                       <div key={`fav-${fav}`} onDragStart={(e) => onDragStart(e, ['csvInput', 'postgresInput', 'jsonInput', 'parquetInput', 'excelInput', 'restApiInput', 'graphQLInput', 'xmlInput', 'avroInput', 'orcInput', 'featherInput', 'fixedWidthInput', 'sqliteInput', 'duckdbInput'].includes(fav) ? 'dataSource' : 'transform', fav)} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">
                         {labelMap[fav] || fav}
                       </div>
@@ -888,21 +904,21 @@ export default function Canvas() {
               </button>
               {expandedCategories['Input'] && (
                 <div className="flex flex-col gap-1 pl-4 pr-2 mt-1">
-                  <div onDragStart={(e) => onDragStart(e, 'dataSource', 'csvInput')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">CSV Input</div>
-                  <div onDragStart={(e) => onDragStart(e, 'dataSource', 'jsonInput')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">JSON Input</div>
-                  <div onDragStart={(e) => onDragStart(e, 'dataSource', 'parquetInput')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Parquet Input</div>
-                  <div onDragStart={(e) => onDragStart(e, 'dataSource', 'excelInput')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Excel Input</div>
+                  <NodeItem type="dataSource" operation="csvInput" label="CSV Input" />
+                  <NodeItem type="dataSource" operation="jsonInput" label="JSON Input" />
+                  <NodeItem type="dataSource" operation="parquetInput" label="Parquet Input" />
+                  <NodeItem type="dataSource" operation="excelInput" label="Excel Input" />
 
-                  <div onDragStart={(e) => onDragStart(e, 'dataSource', 'postgresInput')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">PostgreSQL (Mock)</div>
-                  <div onDragStart={(e) => onDragStart(e, 'dataSource', 'restApiInput')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">REST API</div>
-                  <div onDragStart={(e) => onDragStart(e, 'dataSource', 'graphQLInput')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">GraphQL</div>
-                  <div onDragStart={(e) => onDragStart(e, 'dataSource', 'xmlInput')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">XML Input</div>
-                  <div onDragStart={(e) => onDragStart(e, 'dataSource', 'avroInput')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Avro Input</div>
-                  <div onDragStart={(e) => onDragStart(e, 'dataSource', 'orcInput')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">ORC Input</div>
-                  <div onDragStart={(e) => onDragStart(e, 'dataSource', 'featherInput')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Feather Input</div>
-                  <div onDragStart={(e) => onDragStart(e, 'dataSource', 'fixedWidthInput')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Fixed Width</div>
-                  <div onDragStart={(e) => onDragStart(e, 'dataSource', 'sqliteInput')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">SQLite DB</div>
-                  <div onDragStart={(e) => onDragStart(e, 'dataSource', 'duckdbInput')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">DuckDB File</div>
+                  <NodeItem type="dataSource" operation="postgresInput" label="PostgreSQL (Mock)" />
+                  <NodeItem type="dataSource" operation="restApiInput" label="REST API" />
+                  <NodeItem type="dataSource" operation="graphQLInput" label="GraphQL" />
+                  <NodeItem type="dataSource" operation="xmlInput" label="XML Input" />
+                  <NodeItem type="dataSource" operation="avroInput" label="Avro Input" />
+                  <NodeItem type="dataSource" operation="orcInput" label="ORC Input" />
+                  <NodeItem type="dataSource" operation="featherInput" label="Feather Input" />
+                  <NodeItem type="dataSource" operation="fixedWidthInput" label="Fixed Width" />
+                  <NodeItem type="dataSource" operation="sqliteInput" label="SQLite DB" />
+                  <NodeItem type="dataSource" operation="duckdbInput" label="DuckDB File" />
                 </div>
               )}
             </div>
@@ -915,16 +931,16 @@ export default function Canvas() {
               </button>
               {expandedCategories['Cleaning'] && (
                 <div className="flex flex-col gap-1 pl-4 pr-2 mt-1">
-                  <div onDragStart={(e) => onDragStart(e, 'transform', 'removeNulls')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Remove Nulls</div>
-                  <div onDragStart={(e) => onDragStart(e, 'transform', 'removeDuplicates')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Remove Duplicates</div>
-                  <div onDragStart={(e) => onDragStart(e, 'transform', 'fillMissing')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Fill Missing</div>
-                  <div onDragStart={(e) => onDragStart(e, 'transform', 'typeConversion')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Type Cast</div>
-                  <div onDragStart={(e) => onDragStart(e, 'transform', 'trimWhitespace')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Trim Whitespace</div>
-                  <div onDragStart={(e) => onDragStart(e, 'transform', 'textCasing')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Text Casing</div>
-                  <div onDragStart={(e) => onDragStart(e, 'transform', 'replaceText')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Replace Text</div>
-                  <div onDragStart={(e) => onDragStart(e, 'transform', 'regexExtract')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Regex Extract</div>
-                  <div onDragStart={(e) => onDragStart(e, 'transform', 'dropColumns')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Drop Columns</div>
-                  <div onDragStart={(e) => onDragStart(e, 'transform', 'renameColumn')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Rename Column</div>
+                  <NodeItem type="transform" operation="removeNulls" label="Remove Nulls" />
+                  <NodeItem type="transform" operation="removeDuplicates" label="Remove Duplicates" />
+                  <NodeItem type="transform" operation="fillMissing" label="Fill Missing" />
+                  <NodeItem type="transform" operation="typeConversion" label="Type Cast" />
+                  <NodeItem type="transform" operation="trimWhitespace" label="Trim Whitespace" />
+                  <NodeItem type="transform" operation="textCasing" label="Text Casing" />
+                  <NodeItem type="transform" operation="replaceText" label="Replace Text" />
+                  <NodeItem type="transform" operation="regexExtract" label="Regex Extract" />
+                  <NodeItem type="transform" operation="dropColumns" label="Drop Columns" />
+                  <NodeItem type="transform" operation="renameColumn" label="Rename Column" />
                 </div>
               )}
             </div>
@@ -937,21 +953,21 @@ export default function Canvas() {
               </button>
               {expandedCategories['Transformation'] && (
                 <div className="flex flex-col gap-1 pl-4 pr-2 mt-1">
-                  <div onDragStart={(e) => onDragStart(e, 'transform', 'filterRows')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Filter Rows</div>
-                  <div onDragStart={(e) => onDragStart(e, 'transform', 'sortRows')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Sort Rows</div>
-                  <div onDragStart={(e) => onDragStart(e, 'transform', 'topN')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Top N</div>
-                  <div onDragStart={(e) => onDragStart(e, 'transform', 'sampleRows')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Sample Rows</div>
-                  <div onDragStart={(e) => onDragStart(e, 'transform', 'dateTruncate')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Date Truncate</div>
-                  <div onDragStart={(e) => onDragStart(e, 'transform', 'dateArithmetic')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Date Arithmetic</div>
-                  <div onDragStart={(e) => onDragStart(e, 'transform', 'conditionalLogic')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">If/Then Logic</div>
-                  <div onDragStart={(e) => onDragStart(e, 'transform', 'splitPart')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Split Part</div>
-                  <div onDragStart={(e) => onDragStart(e, 'transform', 'stringLength')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">String Length</div>
-                  <div onDragStart={(e) => onDragStart(e, 'transform', 'mathFormula')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Math Formula</div>
-                  <div onDragStart={(e) => onDragStart(e, 'transform', 'extractYear')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Extract Year</div>
-                  <div onDragStart={(e) => onDragStart(e, 'transform', 'innerJoin')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Inner Join</div>
-                  <div onDragStart={(e) => onDragStart(e, 'transform', 'leftJoin')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Left Join</div>
-                  <div onDragStart={(e) => onDragStart(e, 'transform', 'unionAll')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Union All</div>
-                  <div onDragStart={(e) => onDragStart(e, 'transform', 'customSql')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Custom SQL</div>
+                  <NodeItem type="transform" operation="filterRows" label="Filter Rows" />
+                  <NodeItem type="transform" operation="sortRows" label="Sort Rows" />
+                  <NodeItem type="transform" operation="topN" label="Top N" />
+                  <NodeItem type="transform" operation="sampleRows" label="Sample Rows" />
+                  <NodeItem type="transform" operation="dateTruncate" label="Date Truncate" />
+                  <NodeItem type="transform" operation="dateArithmetic" label="Date Arithmetic" />
+                  <NodeItem type="transform" operation="conditionalLogic" label="If/Then Logic" />
+                  <NodeItem type="transform" operation="splitPart" label="Split Part" />
+                  <NodeItem type="transform" operation="stringLength" label="String Length" />
+                  <NodeItem type="transform" operation="mathFormula" label="Math Formula" />
+                  <NodeItem type="transform" operation="extractYear" label="Extract Year" />
+                  <NodeItem type="transform" operation="innerJoin" label="Inner Join" />
+                  <NodeItem type="transform" operation="leftJoin" label="Left Join" />
+                  <NodeItem type="transform" operation="unionAll" label="Union All" />
+                  <NodeItem type="transform" operation="customSql" label="Custom SQL" />
                 </div>
               )}
             </div>
@@ -964,22 +980,22 @@ export default function Canvas() {
               </button>
               {expandedCategories['Aggregation'] && (
                 <div className="flex flex-col gap-1 pl-4 pr-2 mt-1">
-                  <div onDragStart={(e) => onDragStart(e, 'transform', 'groupBy')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Group By</div>
-                  <div onDragStart={(e) => onDragStart(e, 'transform', 'windowFunction')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Window Function</div>
-                  <div onDragStart={(e) => onDragStart(e, 'transform', 'pivotTable')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Pivot Table</div>
-                  <div onDragStart={(e) => onDragStart(e, 'transform', 'unpivotTable')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Unpivot/Melt</div>
-                  <div onDragStart={(e) => onDragStart(e, 'transform', 'rollup')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Rollup</div>
-                  <div onDragStart={(e) => onDragStart(e, 'transform', 'summaryStats')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Summary Stats</div>
-                  <div onDragStart={(e) => onDragStart(e, 'transform', 'medianAgg')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Median</div>
-                  <div onDragStart={(e) => onDragStart(e, 'transform', 'modeAgg')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Mode</div>
-                  <div onDragStart={(e) => onDragStart(e, 'transform', 'stdDevAgg')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Std Dev</div>
-                  <div onDragStart={(e) => onDragStart(e, 'transform', 'varianceAgg')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Variance</div>
-                  <div onDragStart={(e) => onDragStart(e, 'transform', 'correlationMatrix')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Correlation Matrix</div>
-                  <div onDragStart={(e) => onDragStart(e, 'transform', 'movingAverage')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Moving Average</div>
-                  <div onDragStart={(e) => onDragStart(e, 'transform', 'runningTotal')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Running Total</div>
-                  <div onDragStart={(e) => onDragStart(e, 'transform', 'normalizeColumn')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Normalize</div>
-                  <div onDragStart={(e) => onDragStart(e, 'transform', 'standardizeColumn')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Standardize</div>
-                  <div onDragStart={(e) => onDragStart(e, 'transform', 'regexMatch')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Regex Match</div>
+                  <NodeItem type="transform" operation="groupBy" label="Group By" />
+                  <NodeItem type="transform" operation="windowFunction" label="Window Function" />
+                  <NodeItem type="transform" operation="pivotTable" label="Pivot Table" />
+                  <NodeItem type="transform" operation="unpivotTable" label="Unpivot/Melt" />
+                  <NodeItem type="transform" operation="rollup" label="Rollup" />
+                  <NodeItem type="transform" operation="summaryStats" label="Summary Stats" />
+                  <NodeItem type="transform" operation="medianAgg" label="Median" />
+                  <NodeItem type="transform" operation="modeAgg" label="Mode" />
+                  <NodeItem type="transform" operation="stdDevAgg" label="Std Dev" />
+                  <NodeItem type="transform" operation="varianceAgg" label="Variance" />
+                  <NodeItem type="transform" operation="correlationMatrix" label="Correlation Matrix" />
+                  <NodeItem type="transform" operation="movingAverage" label="Moving Average" />
+                  <NodeItem type="transform" operation="runningTotal" label="Running Total" />
+                  <NodeItem type="transform" operation="normalizeColumn" label="Normalize" />
+                  <NodeItem type="transform" operation="standardizeColumn" label="Standardize" />
+                  <NodeItem type="transform" operation="regexMatch" label="Regex Match" />
                 </div>
               )}
             </div>
@@ -992,7 +1008,7 @@ export default function Canvas() {
               </button>
               {expandedCategories['Export'] && (
                 <div className="flex flex-col gap-1 pl-4 pr-2 mt-1">
-                  <div onDragStart={(e) => onDragStart(e, 'transform', 'exportCsv')} draggable className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors">Export to CSV</div>
+                  <NodeItem type="transform" operation="exportCsv" label="Export to CSV" />
                 </div>
               )}
             </div>

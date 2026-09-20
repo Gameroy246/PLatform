@@ -4,7 +4,7 @@ import path from "path";
 import os from "os";
 import * as xlsx from "xlsx";
 
-const WORKSPACE_DIR = path.join(os.tmpdir(), "LocalDataArchitect_Workspace");
+const WORKSPACE_DIR = path.join(os.homedir(), ".architect");
 
 export async function POST(req: Request) {
   try {
@@ -28,7 +28,7 @@ export async function POST(req: Request) {
     
     const ext = path.extname(file.name).toLowerCase();
     const finalExt = ext === ".xlsx" || ext === ".xls" ? ".csv" : ext;
-    const finalPath = destinationPath.replace(/\.[^/.]+$/, "") + finalExt + ".enc";
+    const finalPath = destinationPath.replace(/\.[^/.]+$/, "") + finalExt;
     let headers: string[] = [];
 
     if (ext === ".xlsx" || ext === ".xls") {
@@ -37,32 +37,34 @@ export async function POST(req: Request) {
       const sheet = workbook.Sheets[sheetName];
       const csvData = xlsx.utils.sheet_to_csv(sheet, { blankrows: true, rawNumbers: false });
       
-      const { encryptBuffer } = await import('@/lib/encryption');
-      const encrypted = encryptBuffer(Buffer.from(csvData, 'utf-8'));
-      fs.writeFileSync(finalPath, encrypted);
+      fs.writeFileSync(finalPath, csvData);
       
-      const firstLine = csvData.split('\n')[0] || '';
-      headers = firstLine.split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+      const rows = csvData.split('\n');
+      if (rows.length > 0) headers = rows[0].split(',').map(h => h.replace(/^["']|["']$/g, ''));
     } else {
-      const { encryptBuffer } = await import('@/lib/encryption');
-      const encrypted = encryptBuffer(buffer);
-      fs.writeFileSync(finalPath, encrypted);
+      fs.writeFileSync(finalPath, buffer);
       
-      if (ext === ".csv") {
-        const firstLine = buffer.toString('utf-8').split('\n')[0] || '';
-        headers = firstLine.split(',').map(h => h.trim());
+      if (ext === '.csv') {
+          const lines = buffer.toString('utf-8').split('\n');
+          if (lines.length > 0) headers = lines[0].split(',').map(h => h.replace(/^["']|["']$/g, ''));
+      } else if (ext === '.json') {
+          try {
+              const data = JSON.parse(buffer.toString('utf-8'));
+              if (Array.isArray(data) && data.length > 0) headers = Object.keys(data[0]);
+              else if (typeof data === 'object') headers = Object.keys(data);
+          } catch(e) {}
       }
     }
 
-    return NextResponse.json({ 
-      success: true, 
+    return NextResponse.json({
+      success: true,
       path: finalPath,
-      headers: headers,
-      message: "File securely encrypted with AES-256-GCM and saved."
+      name: file.name,
+      size: buffer.length,
+      headers: headers
     });
-
   } catch (error: any) {
-    console.error("Upload API Error:", error);
-    return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
+    console.error("Upload error:", error);
+    return NextResponse.json({ error: error.message || "Upload failed" }, { status: 500 });
   }
 }

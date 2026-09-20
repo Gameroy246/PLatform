@@ -8,6 +8,8 @@ import { FolderOpen, Settings2, Trash2, ArrowRight, ArrowDownRight, Star } from 
 import DataPreviewModal from './DataPreviewModal';
 import { generateNodeSQL } from '../lib/sqlGenerator';
 import { useStore } from '../store';
+import { useShallow } from 'zustand/react/shallow';
+import React, { memo } from 'react';
 
 interface PropertiesPanelProps {
   selectedNode: Node | null;
@@ -16,8 +18,18 @@ interface PropertiesPanelProps {
   edges?: Edge[];
 }
 
-export default function PropertiesPanel({ selectedNode, onUpdateNode, nodes = [], edges = [] }: PropertiesPanelProps) {
-  const { favorites, addFavorite, removeFavorite } = useStore();
+const PropertiesPanelComponent = ({ selectedNode, onUpdateNode, nodes = [], edges = [] }: PropertiesPanelProps) => {
+  const { favorites, addFavorite, removeFavorite, tracedNodeId, setTracedNodeId } = useStore(useShallow(state => ({
+    favorites: state.favorites,
+    addFavorite: state.addFavorite,
+    removeFavorite: state.removeFavorite,
+    tracedNodeId: state.tracedNodeId,
+    setTracedNodeId: state.setTracedNodeId
+  })));
+  
+  const configHash = React.useMemo(() => JSON.stringify(nodes.map(n => ({ id: n.id, data: n.data }))), [nodes]);
+  const edgesHash = React.useMemo(() => JSON.stringify(edges), [edges]);
+  
   const [activeTab, setActiveTab] = useState<'settings' | 'description' | 'metadata'>('settings');
   const [previewStreamMode, setPreviewStreamMode] = useState<'success' | 'error'>('success');
   const [isBrowsing, setIsBrowsing] = useState(false);
@@ -69,7 +81,7 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, nodes = []
       isMounted = false;
       clearTimeout(timer);
     };
-  }, [selectedNode?.id, nodes, edges]);
+  }, [configHash, edgesHash, selectedNode?.id]);
 
   
   const ColumnSelect = ({ value, onChange, placeholder }: { value: string, onChange: (val: string) => void, placeholder?: string }) => (
@@ -292,6 +304,14 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, nodes = []
                   <span className="text-xs font-semibold uppercase tracking-wide">Preview</span>
                 </button>
               </div>
+              <button 
+                onClick={() => setTracedNodeId(tracedNodeId === selectedNode.id ? null : selectedNode.id)}
+                className={`w-full justify-center flex items-center gap-2 p-2 border ${tracedNodeId === selectedNode.id ? 'border-accent bg-accent/10 text-accent' : 'border-border bg-code-bg hover:bg-accent-bg'} rounded text-xs font-semibold transition-colors`}
+                title="Highlight Upstream Execution Path"
+              >
+                <ArrowDownRight className="w-4 h-4" />
+                {tracedNodeId === selectedNode.id ? 'Stop Tracing Lineage' : 'Trace Upstream Lineage'}
+              </button>
             </div>
 
             <div className="flex flex-col gap-2">
@@ -467,6 +487,33 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, nodes = []
                   placeholder="https://api.example.com/data"
                   className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
                 />
+                <label className="text-xs font-semibold text-text-h mt-2">HTTP Method</label>
+                <select 
+                  value={selectedNode.data.method as string || 'GET'}
+                  onChange={(e) => onUpdateNode(selectedNode.id, { method: e.target.value })}
+                  className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
+                >
+                  <option value="GET">GET</option>
+                  <option value="POST">POST</option>
+                </select>
+                <label className="text-xs font-semibold text-text-h mt-2">Headers (JSON)</label>
+                <textarea 
+                  value={selectedNode.data.headers as string || '{"Content-Type": "application/json"}'}
+                  onChange={(e) => onUpdateNode(selectedNode.id, { headers: e.target.value })}
+                  placeholder='{"Authorization": "Bearer token"}'
+                  className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors font-mono min-h-[60px]"
+                />
+                {selectedNode.data.method === 'POST' && (
+                  <>
+                    <label className="text-xs font-semibold text-text-h mt-2">Body (JSON)</label>
+                    <textarea 
+                      value={selectedNode.data.body as string || ''}
+                      onChange={(e) => onUpdateNode(selectedNode.id, { body: e.target.value })}
+                      placeholder='{"query": "{ users { id name } }"}'
+                      className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors font-mono min-h-[80px]"
+                    />
+                  </>
+                )}
               </div>
             )}
 
@@ -818,6 +865,67 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, nodes = []
               <div className="p-3 bg-code-bg border border-border rounded-md text-xs text-text-muted">
                 Combines two incoming parent tables using {selectedNode.data.operation as string}. Connect two parent nodes.
               </div>
+            )}
+
+            {/* Phase 2: Advanced Math Nodes */}
+            {['runningTotal', 'movingAverage', 'leadLag', 'rank', 'median', 'stdDev', 'normalize', 'hash', 'timezone', 'fiscalDate'].includes(selectedNode.data.operation as string) && (
+              <>
+                {['runningTotal', 'movingAverage', 'leadLag', 'median', 'stdDev', 'normalize', 'hash', 'timezone', 'fiscalDate'].includes(selectedNode.data.operation as string) && (
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs font-semibold text-text-h">Target Column</label>
+                    <ColumnSelect value={selectedNode.data.column as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { column: val })} placeholder="e.g. amount" />
+                  </div>
+                )}
+                
+                {['runningTotal', 'movingAverage', 'leadLag', 'rank', 'median', 'stdDev', 'normalize'].includes(selectedNode.data.operation as string) && (
+                  <div className="flex flex-col gap-2 mt-2">
+                    <label className="text-xs font-semibold text-text-h">Partition By (Optional)</label>
+                    <ColumnSelect value={selectedNode.data.partCol as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { partCol: val })} placeholder="e.g. department" />
+                  </div>
+                )}
+
+                {['runningTotal', 'movingAverage', 'leadLag', 'rank'].includes(selectedNode.data.operation as string) && (
+                  <div className="flex flex-col gap-2 mt-2">
+                    <label className="text-xs font-semibold text-text-h">Order By</label>
+                    <ColumnSelect value={selectedNode.data.orderCol as string || ''} onChange={(val) => onUpdateNode(selectedNode.id, { orderCol: val })} placeholder="e.g. date_col" />
+                  </div>
+                )}
+
+                {selectedNode.data.operation === 'movingAverage' && (
+                  <div className="flex flex-col gap-2 mt-2">
+                    <label className="text-xs font-semibold text-text-h">Window Size (Trailing Rows)</label>
+                    <input type="number" value={selectedNode.data.windowSize as string || '3'} onChange={(e) => onUpdateNode(selectedNode.id, { windowSize: e.target.value })} className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text" />
+                  </div>
+                )}
+
+                {selectedNode.data.operation === 'leadLag' && (
+                  <div className="flex flex-col gap-2 mt-2">
+                    <label className="text-xs font-semibold text-text-h">Offset (Negative for LAG, Positive for LEAD)</label>
+                    <input type="number" value={selectedNode.data.offset as string || '-1'} onChange={(e) => onUpdateNode(selectedNode.id, { offset: e.target.value })} className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text" />
+                  </div>
+                )}
+
+                {selectedNode.data.operation === 'rank' && (
+                  <div className="flex items-center gap-2 mt-2">
+                    <input type="checkbox" checked={selectedNode.data.denseRank as boolean || false} onChange={(e) => onUpdateNode(selectedNode.id, { denseRank: e.target.checked })} id="denseRank" />
+                    <label htmlFor="denseRank" className="text-xs text-text-h">Use Dense Rank</label>
+                  </div>
+                )}
+
+                {selectedNode.data.operation === 'timezone' && (
+                  <div className="flex flex-col gap-2 mt-2">
+                    <label className="text-xs font-semibold text-text-h">Target Timezone</label>
+                    <input type="text" value={selectedNode.data.tz as string || 'America/New_York'} onChange={(e) => onUpdateNode(selectedNode.id, { tz: e.target.value })} placeholder="e.g. America/New_York" className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text" />
+                  </div>
+                )}
+
+                {selectedNode.data.operation === 'fiscalDate' && (
+                  <div className="flex flex-col gap-2 mt-2">
+                    <label className="text-xs font-semibold text-text-h">Fiscal Start Month (1-12)</label>
+                    <input type="number" value={selectedNode.data.fiscalStartMonth as string || '10'} onChange={(e) => onUpdateNode(selectedNode.id, { fiscalStartMonth: e.target.value })} min="1" max="12" className="px-3 py-2 bg-code-bg border border-border rounded-md text-sm text-text" />
+                  </div>
+                )}
+              </>
             )}
 
             {['rankRows', 'denseRankRows', 'percentRankRows'].includes(selectedNode.data.operation as string) && (
@@ -1230,6 +1338,44 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, nodes = []
 
         {activeTab === 'metadata' && (
           <div className="flex flex-col gap-4">
+            
+            <div className="flex flex-col gap-2">
+              <label className="text-xs font-semibold text-text-h">Catalog Tags</label>
+              <input 
+                type="text" 
+                value={selectedNode.data.tags as string || ''}
+                onChange={(e) => onUpdateNode(selectedNode.id, { tags: e.target.value })}
+                placeholder="e.g. Finance, Core, PII"
+                className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
+              />
+              <label className="text-xs font-semibold text-text-h mt-2">Data Owner</label>
+              <input 
+                type="text" 
+                value={selectedNode.data.owner as string || ''}
+                onChange={(e) => onUpdateNode(selectedNode.id, { owner: e.target.value })}
+                placeholder="e.g. Data Eng Team"
+                className="px-3 py-2 bg-bg border border-border rounded-md text-sm text-text focus:outline-none focus:border-accent transition-colors"
+              />
+            </div>
+
+            {realtimeSchema.length > 0 && (
+              <div className="flex flex-col gap-2 p-3 bg-code-bg border border-border rounded-md">
+                <label className="text-xs font-semibold text-text-h flex items-center justify-between">
+                  Expected Schema Base
+                  {!!selectedNode.data.expectedSchema && JSON.stringify(selectedNode.data.expectedSchema) !== JSON.stringify(realtimeSchema) && (
+                    <span className="text-red-500 bg-red-500/10 px-1 py-0.5 rounded text-[10px] border border-red-500/20">DRIFT DETECTED</span>
+                  )}
+                </label>
+                <div className="text-[10px] text-text-muted">Save the current schema to detect upstream changes automatically.</div>
+                <button 
+                  onClick={() => onUpdateNode(selectedNode.id, { expectedSchema: realtimeSchema })}
+                  className="px-3 py-1.5 bg-accent/20 text-accent rounded text-xs font-medium hover:bg-accent/30 transition-colors"
+                >
+                  Save as Expected Schema
+                </button>
+              </div>
+            )}
+
             <div className="flex flex-col gap-2">
               <label className="text-xs font-semibold text-text-h">Performance</label>
               <div className="p-3 bg-code-bg border border-border rounded-md text-sm text-text space-y-2">
@@ -1289,3 +1435,8 @@ export default function PropertiesPanel({ selectedNode, onUpdateNode, nodes = []
   );
 }
 
+export default memo(PropertiesPanelComponent, (prevProps, nextProps) => {
+  return prevProps.selectedNode?.id === nextProps.selectedNode?.id &&
+         prevProps.nodes === nextProps.nodes &&
+         prevProps.edges === nextProps.edges;
+});

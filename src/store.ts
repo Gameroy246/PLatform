@@ -1,5 +1,6 @@
 "use client";
 import { create } from 'zustand';
+import { produce } from 'immer';
 
 import {
   addEdge,
@@ -46,6 +47,8 @@ type RFState = {
   addFavorite: (operation: string) => void;
   removeFavorite: (operation: string) => void;
   setFavorites: (favs: string[]) => void;
+  tracedNodeId: string | null;
+  setTracedNodeId: (id: string | null) => void;
 };
 
 export const useStore = create<RFState>((set, get) => ({
@@ -56,46 +59,51 @@ export const useStore = create<RFState>((set, get) => ({
   favorites: [],
   addFavorite: (operation: string) => set(state => {
     const newFavs = [...new Set([...state.favorites, operation])];
-    localStorage.setItem('ARCHITECT_FAVORITES', JSON.stringify(newFavs));
     return { favorites: newFavs };
   }),
   removeFavorite: (operation: string) => set(state => {
     const newFavs = state.favorites.filter(f => f !== operation);
-    localStorage.setItem('ARCHITECT_FAVORITES', JSON.stringify(newFavs));
     return { favorites: newFavs };
   }),
   setFavorites: (favs: string[]) => set({ favorites: favs }),
   
+  tracedNodeId: null,
+  setTracedNodeId: (id: string | null) => set({ tracedNodeId: id }),
+
   saveHistory: () => {
     const { nodes, edges, history } = get();
-    set({
-      history: [...history, { nodes, edges }].slice(-50),
-      future: [],
-    });
+    // Only push if there's an actual difference to avoid memory bloat on no-ops
+    if (history.length > 0) {
+      const last = history[history.length - 1];
+      if (JSON.stringify(last.nodes) === JSON.stringify(nodes) && JSON.stringify(last.edges) === JSON.stringify(edges)) {
+        return;
+      }
+    }
+    set(produce((state) => {
+      state.history.push({ nodes: JSON.parse(JSON.stringify(nodes)), edges: JSON.parse(JSON.stringify(edges)) });
+      if (state.history.length > 15) state.history.shift();
+      state.future = [];
+    }));
   },
 
   undo: () => {
-    const { history, future, nodes, edges } = get();
-    if (history.length === 0) return;
-    const previous = history[history.length - 1];
-    set({
-      nodes: previous.nodes,
-      edges: previous.edges,
-      history: history.slice(0, -1),
-      future: [{ nodes, edges }, ...future],
-    });
+    set(produce((state) => {
+      if (state.history.length === 0) return;
+      const previous = state.history.pop();
+      state.future.unshift({ nodes: state.nodes, edges: state.edges });
+      state.nodes = previous.nodes;
+      state.edges = previous.edges;
+    }));
   },
 
   redo: () => {
-    const { history, future, nodes, edges } = get();
-    if (future.length === 0) return;
-    const next = future[0];
-    set({
-      nodes: next.nodes,
-      edges: next.edges,
-      history: [...history, { nodes, edges }],
-      future: future.slice(1),
-    });
+    set(produce((state) => {
+      if (state.future.length === 0) return;
+      const next = state.future.shift();
+      state.history.push({ nodes: state.nodes, edges: state.edges });
+      state.nodes = next.nodes;
+      state.edges = next.edges;
+    }));
   },
   
   deleteSelected: () => {
@@ -133,18 +141,12 @@ export const useStore = create<RFState>((set, get) => ({
     set((state) => ({
       nodes: state.nodes.map(n => ({
         ...n,
-        style: {
-          ...n.style,
-          border: statuses[n.id]?.status === 'SUCCESS' ? '2px solid #4ade80' : 
-                 statuses[n.id]?.status === 'ERROR' ? '2px solid #f87171' : '1px solid var(--border)',
-          boxShadow: statuses[n.id]?.status === 'SUCCESS' ? '0 0 15px rgba(74, 222, 128, 0.2)' : 
-                    statuses[n.id]?.status === 'ERROR' ? '0 0 15px rgba(248, 113, 113, 0.2)' : 'none',
-          borderRadius: '8px'
-        },
         data: {
           ...n.data,
+          status: statuses[n.id]?.status,
           executionTime: statuses[n.id]?.duration_ms,
-          error: statuses[n.id]?.error
+          error: statuses[n.id]?.error,
+          metrics: statuses[n.id]?.metrics
         }
       }))
     }));

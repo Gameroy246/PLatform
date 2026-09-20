@@ -3,12 +3,13 @@ import { useState, useEffect, useRef } from 'react';
 import { Search, Plus, GitMerge, Settings, Play } from 'lucide-react';
 
 interface CommandPaletteProps {
+  userFeatures?: string[];
   onAddNode: (type: string, operation: string) => void;
   onRunPipeline: () => void;
   onOpenVariables?: () => void;
 }
 
-export default function CommandPalette({ onAddNode, onRunPipeline, onOpenVariables }: CommandPaletteProps) {
+export default function CommandPalette({ onAddNode, onRunPipeline, onOpenVariables, userFeatures = ['all'] }: CommandPaletteProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [macros, setMacros] = useState<any[]>([]);
@@ -47,7 +48,7 @@ export default function CommandPalette({ onAddNode, onRunPipeline, onOpenVariabl
 
   if (!isOpen) return null;
 
-  const commands = [
+  const allCommands = [
     { name: 'Run Pipeline', icon: Play, action: onRunPipeline },
     { name: 'Add Node: CSV Input', icon: Plus, action: () => onAddNode('dataSource', 'csvInput') },
     { name: 'Add Node: JSON Input', icon: Plus, action: () => onAddNode('dataSource', 'jsonInput') },
@@ -100,6 +101,8 @@ export default function CommandPalette({ onAddNode, onRunPipeline, onOpenVariabl
     { name: 'Add Node: Unpivot/Melt', icon: Plus, action: () => onAddNode('transform', 'unpivotTable') },
     { name: 'Add Node: Rollup', icon: Plus, action: () => onAddNode('transform', 'rollup') },
     { name: 'Add Node: Summary Stats', icon: Plus, action: () => onAddNode('transform', 'summaryStats') },
+    { name: 'Add Node: Outlier Detection', icon: Plus, action: () => onAddNode('transform', 'outlierDetection') },
+    { name: 'Add Node: Duplicate Analysis', icon: Plus, action: () => onAddNode('transform', 'duplicateAnalysis') },
     { name: 'Add Node: Median', icon: Plus, action: () => onAddNode('transform', 'medianAgg') },
     { name: 'Add Node: Mode', icon: Plus, action: () => onAddNode('transform', 'modeAgg') },
     { name: 'Add Node: Std Dev', icon: Plus, action: () => onAddNode('transform', 'stdDevAgg') },
