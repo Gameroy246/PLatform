@@ -134,6 +134,18 @@ export default function Canvas({ projectId, onBack, onOpenAdmin, onLogout }: { p
   const [userRole, setUserRole] = useState<string>('VIEWER');
   const [userFeatures, setUserFeatures] = useState<string[]>(['all']);
 
+  useEffect(() => {
+    fetch('/api/auth/me')
+      .then(res => res.json())
+      .then(data => {
+        if (data.authenticated) {
+          setUserRole(data.user.role);
+          setUserFeatures(data.user.features || ['all']);
+        }
+      })
+      .catch(console.error);
+  }, []);
+
   const [isWelcomeModalOpen, setIsWelcomeModalOpen] = useState(true);
   const [showWelcomeGuide, setShowWelcomeGuide] = useState(true);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);

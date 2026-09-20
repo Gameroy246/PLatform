@@ -1,0 +1,9 @@
+[
+  {"order_id": 101, "customer_id": 1, "order_amount": 250.50, "status": "COMPLETED", "order_date": "2024-05-10T10:00:00Z"},
+  {"order_id": 102, "customer_id": 2, "order_amount": 45.00, "status": "COMPLETED", "order_date": "2024-05-11T14:30:00Z"},
+  {"order_id": 103, "customer_id": 1, "order_amount": 120.00, "status": "CANCELLED", "order_date": "2024-05-12T09:15:00Z"},
+  {"order_id": 104, "customer_id": 3, "order_amount": 890.75, "status": "COMPLETED", "order_date": "2024-05-12T16:45:00Z"},
+  {"order_id": 105, "customer_id": 4, "order_amount": 12.99, "status": "PENDING", "order_date": "2024-05-13T11:20:00Z"},
+  {"order_id": 106, "customer_id": 1, "order_amount": 55.00, "status": "COMPLETED", "order_date": "2024-06-01T08:00:00Z"},
+  {"order_id": 107, "customer_id": 5, "order_amount": 400.00, "status": "COMPLETED", "order_date": "2024-06-05T12:00:00Z"}
+]

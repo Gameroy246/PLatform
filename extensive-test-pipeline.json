@@ -1,0 +1,155 @@
+{
+  "nodes": [
+    {
+      "id": "node-users-input",
+      "type": "custom",
+      "position": { "x": 100, "y": 100 },
+      "data": {
+        "operation": "csvInput",
+        "file": "users.csv",
+        "label": "Load Users"
+      }
+    },
+    {
+      "id": "node-orders-input",
+      "type": "custom",
+      "position": { "x": 100, "y": 300 },
+      "data": {
+        "operation": "jsonInput",
+        "file": "orders.json",
+        "label": "Load Orders"
+      }
+    },
+    {
+      "id": "node-join",
+      "type": "custom",
+      "position": { "x": 400, "y": 200 },
+      "data": {
+        "operation": "innerJoin",
+        "joinCondition": "user_id = customer_id",
+        "label": "Join Users & Orders"
+      }
+    },
+    {
+      "id": "node-type-cast",
+      "type": "custom",
+      "position": { "x": 650, "y": 200 },
+      "data": {
+        "operation": "typeConversion",
+        "column": "order_amount",
+        "targetType": "DOUBLE",
+        "newCol": "order_amount_numeric",
+        "label": "Cast Amount to Double"
+      }
+    },
+    {
+      "id": "node-filter",
+      "type": "custom",
+      "position": { "x": 900, "y": 200 },
+      "data": {
+        "operation": "filterRows",
+        "filterCol": "status",
+        "filterOp": "=",
+        "filterVal": "'COMPLETED'",
+        "label": "Keep Completed Orders"
+      }
+    },
+    {
+      "id": "node-extract-date",
+      "type": "custom",
+      "position": { "x": 1150, "y": 200 },
+      "data": {
+        "operation": "extractYear",
+        "column": "order_date",
+        "newCol": "order_year",
+        "label": "Extract Year"
+      }
+    },
+    {
+      "id": "node-groupby",
+      "type": "custom",
+      "position": { "x": 1400, "y": 200 },
+      "data": {
+        "operation": "groupBy",
+        "groupCol": "user_id",
+        "aggFunc": "SUM",
+        "aggCol": "order_amount_numeric",
+        "label": "Calculate LTV"
+      }
+    },
+    {
+      "id": "node-export",
+      "type": "custom",
+      "position": { "x": 1650, "y": 200 },
+      "data": {
+        "operation": "exportCsv",
+        "label": "Export LTV Report"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-1",
+      "source": "node-users-input",
+      "target": "node-join",
+      "sourceHandle": "right",
+      "targetHandle": "left-1",
+      "animated": true,
+      "style": { "stroke": "#8b5cf6", "strokeWidth": 2 }
+    },
+    {
+      "id": "edge-2",
+      "source": "node-orders-input",
+      "target": "node-join",
+      "sourceHandle": "right",
+      "targetHandle": "left-2",
+      "animated": true,
+      "style": { "stroke": "#8b5cf6", "strokeWidth": 2 }
+    },
+    {
+      "id": "edge-3",
+      "source": "node-join",
+      "target": "node-type-cast",
+      "sourceHandle": "right",
+      "targetHandle": "left",
+      "animated": true,
+      "style": { "stroke": "#8b5cf6", "strokeWidth": 2 }
+    },
+    {
+      "id": "edge-4",
+      "source": "node-type-cast",
+      "target": "node-filter",
+      "sourceHandle": "right",
+      "targetHandle": "left",
+      "animated": true,
+      "style": { "stroke": "#8b5cf6", "strokeWidth": 2 }
+    },
+    {
+      "id": "edge-5",
+      "source": "node-filter",
+      "target": "node-extract-date",
+      "sourceHandle": "right",
+      "targetHandle": "left",
+      "animated": true,
+      "style": { "stroke": "#8b5cf6", "strokeWidth": 2 }
+    },
+    {
+      "id": "edge-6",
+      "source": "node-extract-date",
+      "target": "node-groupby",
+      "sourceHandle": "right",
+      "targetHandle": "left",
+      "animated": true,
+      "style": { "stroke": "#8b5cf6", "strokeWidth": 2 }
+    },
+    {
+      "id": "edge-7",
+      "source": "node-groupby",
+      "target": "node-export",
+      "sourceHandle": "right",
+      "targetHandle": "left",
+      "animated": true,
+      "style": { "stroke": "#8b5cf6", "strokeWidth": 2 }
+    }
+  ]
+}
