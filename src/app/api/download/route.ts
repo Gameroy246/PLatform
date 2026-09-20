@@ -3,7 +3,7 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 
-const WORKSPACE_DIR = path.join(os.tmpdir(), "LocalDataArchitect_Workspace");
+const WORKSPACE_DIR = path.join(os.homedir(), ".architect");
 
 function streamFile(filePath: string): ReadableStream {
   const nodeStream = fs.createReadStream(filePath);
