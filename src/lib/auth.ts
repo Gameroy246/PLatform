@@ -40,7 +40,7 @@ export async function setSession(user: AuthUser) {
   const cookieStore = await cookies();
   cookieStore.set('architect_session', token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: process.env.NODE_ENV === 'production' && process.env.HTTPS === 'true',
     sameSite: 'lax',
     path: '/',
     maxAge: 60 * 60 * 24 // 24 hours

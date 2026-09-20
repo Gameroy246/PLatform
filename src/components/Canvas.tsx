@@ -296,7 +296,7 @@ export default function Canvas({ projectId, onBack }: { projectId?: string | nul
   const [isResizingPanel, setIsResizingPanel] = useState(false);
   const [isResizingConsole, setIsResizingConsole] = useState(false);
   
-  const [activeConsoleTab, setActiveConsoleTab] = useState<'output' | 'input' | 'sql' | 'dashboard' | 'logs' | 'dbt'>('output');
+  const [activeConsoleTab, setActiveConsoleTab] = useState<'output' | 'input' | 'sql' | 'dashboard' | 'logs' | 'dbt' | 'sql_full'>('output');
   const [sidebarSearch, setSidebarSearch] = useState('');
   const [macros, setMacros] = useState<any[]>([]);
 
@@ -709,6 +709,19 @@ export default function Canvas({ projectId, onBack }: { projectId?: string | nul
       
       setActiveTab('logs');
     }
+  };
+
+  const NodeItem = ({ type, operation, label }: { type: string, operation: string, label: string }) => {
+    if (!userFeatures.includes('all') && !userFeatures.includes(operation)) return null;
+    return (
+      <div 
+        onDragStart={(e: any) => onDragStart(e, type, operation)} 
+        draggable 
+        className="p-2 border border-border rounded-md bg-code-bg hover:border-accent-border hover:bg-accent-bg cursor-grab active:cursor-grabbing text-xs text-text transition-colors"
+      >
+        {label}
+      </div>
+    );
   };
 
   return (

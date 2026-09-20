@@ -133,6 +133,32 @@ export default function CommandPalette({ onAddNode, onRunPipeline, onOpenVariabl
     }))
   ];
 
+  const commands = allCommands.filter(c => {
+    if (userFeatures.includes('all')) return true;
+    if (c.name.includes('Add Node:')) {
+       const typeMap: any = {
+         'CSV Input': 'csvInput', 'JSON Input': 'jsonInput', 'Parquet Input': 'parquetInput', 'Excel Input': 'excelInput',
+         'PostgreSQL Input': 'postgresInput', 'MySQL Input': 'mysqlInput', 'SQL Server Input': 'sqlserverInput', 'MongoDB Input': 'mongodbInput',
+         'Arrow Input': 'arrowInput', 'REST API': 'restApiInput', 'GraphQL': 'graphQLInput', 'XML Input': 'xmlInput',
+         'Avro Input': 'avroInput', 'ORC Input': 'orcInput', 'Feather Input': 'featherInput', 'Fixed Width Input': 'fixedWidthInput',
+         'SQLite Input': 'sqliteInput', 'DuckDB Input': 'duckdbInput',
+         'Remove Duplicates': 'removeDuplicates', 'Remove Nulls': 'removeNulls', 'Fill Missing': 'fillMissing', 'Type Cast': 'typeConversion',
+         'Trim Whitespace': 'trimWhitespace', 'Text Casing': 'textCasing', 'Replace Text': 'replaceText', 'Regex Extract': 'regexExtract',
+         'Drop Columns': 'dropColumns', 'Rename Column': 'renameColumn', 'Filter Rows': 'filterRows', 'Sort Rows': 'sortRows',
+         'Top N': 'topN', 'Sample Rows': 'sampleRows', 'Date Truncate': 'dateTruncate', 'Date Arithmetic': 'dateArithmetic',
+         'If/Then Logic': 'conditionalLogic', 'Split Part': 'splitPart', 'String Length': 'stringLength',
+         'Inner Join': 'innerJoin', 'Left Join': 'leftJoin', 'Self Join': 'selfJoin', 'Union All': 'unionAll',
+         'Group By': 'groupBy', 'Window Function': 'windowFunction', 'Pivot Table': 'pivotTable', 'Unpivot/Melt': 'unpivotTable',
+         'Calculate Math': 'calculateMath', 'Aggregate Math': 'aggregateMath', 'Normalize': 'normalizeMath', 'Rounding': 'roundingMath',
+         'Export to CSV': 'exportCsv'
+       };
+       const nodeName = c.name.replace('Add Node: ', '');
+       const key = typeMap[nodeName];
+       if (key) return userFeatures.includes(key);
+    }
+    return true;
+  });
+
   const filteredCommands = commands.filter((c) =>
     c.name.toLowerCase().includes(search.toLowerCase())
   );
