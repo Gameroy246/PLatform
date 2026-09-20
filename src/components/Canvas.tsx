@@ -21,7 +21,7 @@ import HistoryViewer from './HistoryViewer';
 import WelcomeModal from './WelcomeModal';
 import AuditLogs from './AuditLogs';
 import SettingsModal from './SettingsModal';
-import { Settings, Sparkles, Folders } from 'lucide-react';
+import { Settings, Sparkles, Folders, CheckCircle, ShieldAlert, LogOut } from 'lucide-react';
 
 const labelMap: Record<string, string> = {
   csvInput: 'CSV Input',
@@ -135,6 +135,7 @@ export default function Canvas({ projectId, onBack, onOpenAdmin, onLogout }: { p
   const [userFeatures, setUserFeatures] = useState<string[]>(['all']);
 
   const [isWelcomeModalOpen, setIsWelcomeModalOpen] = useState(true);
+  const [showWelcomeGuide, setShowWelcomeGuide] = useState(true);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
 
@@ -1064,6 +1065,51 @@ export default function Canvas({ projectId, onBack, onOpenAdmin, onLogout }: { p
             connectionRadius={40}
           >
             <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="var(--border)" />
+              
+              {showWelcomeGuide && nodes.length === 0 && (
+                <div className="absolute inset-0 z-50 flex items-center justify-center pointer-events-none bg-bg/50 backdrop-blur-sm">
+                  <div className="bg-code-bg border border-accent/40 rounded-xl p-8 shadow-[0_0_40px_rgba(139,92,246,0.15)] max-w-lg text-center pointer-events-auto transform transition-all translate-y-0 opacity-100">
+                    <div className="w-16 h-16 bg-accent/20 rounded-full flex items-center justify-center mx-auto mb-6 border border-accent/30">
+                      <Sparkles className="w-8 h-8 text-accent" />
+                    </div>
+                    <h2 className="text-2xl font-bold text-text-h mb-3">Welcome to Architect</h2>
+                    <p className="text-text-muted mb-8 text-sm leading-relaxed">
+                      You're ready to build your first data pipeline. Architect makes it easy to construct complex workflows visually.
+                    </p>
+                    
+                    <div className="text-left space-y-4 mb-8 bg-bg p-5 rounded-lg border border-border">
+                      <div className="flex items-start gap-3">
+                        <CheckCircle className="w-5 h-5 text-green-500 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="font-semibold text-text text-sm">1. Drag a Node</p>
+                          <p className="text-xs text-text-muted">Pull a node from the left <strong>Node Library</strong> onto this canvas.</p>
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-3">
+                        <CheckCircle className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="font-semibold text-text text-sm">2. Connect & Configure</p>
+                          <p className="text-xs text-text-muted">Link nodes by dragging between their dots. Click any node to open its settings on the right.</p>
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-3">
+                        <CheckCircle className="w-5 h-5 text-accent shrink-0 mt-0.5" />
+                        <div>
+                          <p className="font-semibold text-text text-sm">3. Run Pipeline</p>
+                          <p className="text-xs text-text-muted">Hit the glowing <strong>Run Pipeline</strong> button to execute and preview data.</p>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <button 
+                      onClick={() => setShowWelcomeGuide(false)}
+                      className="w-full py-3 bg-accent text-white rounded-lg font-bold hover:bg-accent/90 transition-colors shadow-glow"
+                    >
+                      Let's Build!
+                    </button>
+                  </div>
+                </div>
+              )}
             <Controls className="bg-bg border-border fill-text-h shadow-shadow" />
             <MiniMap 
               nodeColor="var(--accent)" 
