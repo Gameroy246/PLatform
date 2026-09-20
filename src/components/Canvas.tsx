@@ -101,7 +101,7 @@ const nodeTypes = {
 };
 
 import { useTheme } from 'next-themes';
-export default function Canvas({ projectId, onBack }: { projectId?: string | null, onBack?: () => void }) {
+export default function Canvas({ projectId, onBack, onOpenAdmin, onLogout }: { projectId?: string | null, onBack?: () => void, onOpenAdmin?: () => void, onLogout?: () => void }) {
   const { nodes, edges, onNodesChange, onEdgesChange, onConnect, onSelectionChange, addNode, updateNodeData, undo, redo, deleteSelected, duplicateSelected, setNodeStatuses, setNodes, setEdges, favorites, setFavorites } = useStore();
   const [activeTab, setActiveTab] = useState<'preview' | 'sql' | 'logs' | 'dashboard'>('sql');
   const [showVariablesModal, setShowVariablesModal] = useState(false);

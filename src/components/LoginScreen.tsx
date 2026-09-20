@@ -1,10 +1,10 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+
 import { ShieldCheck, Mail, Lock, RefreshCw, KeyRound, AlertTriangle } from 'lucide-react';
 
-export default function LoginPage() {
+export default function LoginScreen({ onLoginSuccess }: { onLoginSuccess: (role: string) => void }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [captchaText, setCaptchaText] = useState('');
@@ -16,7 +16,7 @@ export default function LoginPage() {
   
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const router = useRouter();
+  
 
   const fetchCaptcha = async () => {
     try {
@@ -58,7 +58,7 @@ export default function LoginPage() {
       }
       
       if (data.success) {
-         window.location.href = '/';
+         onLoginSuccess(data.role);
       }
     } catch (err: any) {
       setError(err.message);

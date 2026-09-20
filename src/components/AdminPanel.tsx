@@ -2,18 +2,18 @@
 
 import React, { useState, useEffect } from 'react';
 import { ShieldAlert, Users, Plus, Trash2, Edit, Save, ArrowLeft } from 'lucide-react';
-import { useRouter } from 'next/navigation';
 
-export default function AdminDashboard() {
+
+export default function AdminPanel({ onBack }: { onBack: () => void }) {
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const router = useRouter();
+  
 
   const fetchUsers = async () => {
     try {
       const res = await fetch('/api/admin/users');
       if (res.status === 401 || res.status === 403) {
-         router.push('/');
+         onBack();
          return;
       }
       const data = await res.json();
@@ -81,7 +81,7 @@ export default function AdminDashboard() {
     <div className="min-h-screen bg-bg text-text font-sans flex flex-col">
       <header className="h-14 border-b border-border bg-code-bg px-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <button onClick={() => router.push('/')} className="p-1.5 hover:bg-bg rounded transition-colors">
+          <button onClick={() => onBack()} className="p-1.5 hover:bg-bg rounded transition-colors mr-2">
             <ArrowLeft className="w-5 h-5 text-text-muted" />
           </button>
           <div className="flex items-center justify-center w-8 h-8 rounded bg-red-500/10 border border-red-500/20">

@@ -26,6 +26,8 @@ export interface TopBarProps {
   handleRunPipeline: () => void;
   isRunning: boolean;
   userRole?: string;
+  onOpenAdmin?: () => void;
+  onLogout?: () => void;
 }
 
 export default function TopBar(props: TopBarProps) {
@@ -33,7 +35,7 @@ export default function TopBar(props: TopBarProps) {
     onBack, openMenu, setOpenMenu, pipelineFileInputRef, handleLoadPipelineFromFile,
     handleSavePipelineToFile, setNodes, autoLayout, handleMagicLayout, groupNodes,
     alignLeft, alignTop, distributeHorizontally, setShowVariablesModal, setShowCredentialsModal,
-    theme, mounted, setTheme, searchQuery, setSearchQuery, handleSearchNode, handleRunPipeline, isRunning, userRole
+    theme, mounted, setTheme, searchQuery, setSearchQuery, handleSearchNode, handleRunPipeline, isRunning, userRole, onOpenAdmin, onLogout
   } = props;
 
   return (
@@ -121,12 +123,12 @@ export default function TopBar(props: TopBarProps) {
           </form>
 
           {userRole === 'SUPERUSER' && (
-             <button onClick={() => window.location.href = '/admin'} className="px-3 py-1.5 rounded-md text-xs font-semibold bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500/20 transition-colors">
+             <button onClick={() => { if (onOpenAdmin) onOpenAdmin(); }} className="px-3 py-1.5 rounded-md text-xs font-semibold bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500/20 transition-colors">
                Admin
              </button>
           )}
 
-          <button onClick={async () => { await fetch('/api/auth/logout', { method: 'POST' }); window.location.href = '/login'; }} className="px-3 py-1.5 rounded-md text-xs font-semibold bg-code-bg text-text-muted border border-border hover:text-text hover:border-text-muted transition-colors">
+          <button onClick={async () => { await fetch('/api/auth/logout', { method: 'POST' }); if (onLogout) onLogout(); else window.location.reload(); }} className="px-3 py-1.5 rounded-md text-xs font-semibold bg-code-bg text-text-muted border border-border hover:text-text hover:border-text-muted transition-colors">
             Log Out
           </button>
 
