@@ -845,6 +845,12 @@ export default function Canvas({ projectId, onBack, onOpenAdmin, onLogout }: { p
           >
             {mounted && theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
           </button>
+
+          {onLogout && (
+             <button onClick={onLogout} className="px-3 py-1.5 rounded-md text-xs font-semibold bg-code-bg text-text-muted border border-border hover:text-text hover:border-text-muted transition-colors flex items-center gap-1.5 mx-2">
+               <LogOut className="w-4 h-4" /> Log Out
+             </button>
+          )}
           
           <span className="text-xs text-text-muted font-mono hidden md:block border border-border px-2 py-1 rounded mr-2">
             Ctrl+K for Commands
