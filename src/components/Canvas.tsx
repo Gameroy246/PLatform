@@ -186,11 +186,35 @@ export default function Canvas({ projectId, onBack, onOpenAdmin, onLogout }: { p
 
   const pipelineFileInputRef = useRef<HTMLInputElement>(null);
 
+  const savePipelineToCloud = async () => {
+    if (!projectId) return;
+    try {
+      const res = await fetch('/api/pipelines', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: projectId,
+          name: 'Canvas Sync', 
+          nodes,
+          edges
+        })
+      });
+      if (res.ok) {
+        showToast('Pipeline saved to cloud.', 'success');
+      } else {
+        showToast('Failed to save pipeline.', 'error');
+      }
+    } catch (e) {
+      showToast('Error saving pipeline.', 'error');
+    }
+  };
+
   const handleSavePipelineToFile = () => {
     if (nodes.length === 0) {
       showToast("Canvas is empty. Nothing to save.", "error");
       return;
     }
+    savePipelineToCloud();
     const data = JSON.stringify({ version: "1.0", savedNodes: nodes, savedEdges: edges }, null, 2);
     const blob = new Blob([data], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -807,9 +831,9 @@ export default function Canvas({ projectId, onBack, onOpenAdmin, onLogout }: { p
           </button>
           
           <button 
-            onClick={handleSavePipelineToFile} 
+            onClick={savePipelineToCloud} 
             className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold border border-border rounded-md hover:bg-code-bg hover:text-text transition-colors shadow-sm mr-2"
-            title="Save Pipeline to JSON File"
+            title="Save Pipeline to Cloud"
           >
             <Save className="w-4 h-4 text-accent" /> Save Pipeline
           </button>
@@ -822,17 +846,6 @@ export default function Canvas({ projectId, onBack, onOpenAdmin, onLogout }: { p
             {mounted && theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
           </button>
           
-          {userRole === 'SUPERUSER' && onOpenAdmin && (
-             <button onClick={onOpenAdmin} className="px-3 py-1.5 rounded-md text-xs font-semibold bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500/20 transition-colors flex items-center gap-1.5 ml-2">
-               <ShieldAlert className="w-4 h-4" /> Admin
-             </button>
-          )}
-
-          {onLogout && (
-             <button onClick={onLogout} className="px-3 py-1.5 rounded-md text-xs font-semibold bg-code-bg text-text-muted border border-border hover:text-text hover:border-text-muted transition-colors flex items-center gap-1.5 mx-2">
-               <LogOut className="w-4 h-4" /> Log Out
-             </button>
-          )}
           <span className="text-xs text-text-muted font-mono hidden md:block border border-border px-2 py-1 rounded mr-2">
             Ctrl+K for Commands
           </span>

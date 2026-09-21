@@ -13,7 +13,7 @@ export default function SecureWorkspace() {
   const [authStatus, setAuthStatus] = useState<'loading' | 'unauthenticated' | 'authenticated'>('loading');
   const [activeView, setActiveView] = useState<ViewState>('login');
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
-  const [userRole, setUserRole] = useState<string | null>(null);
+  const [currentUser, setCurrentUser] = useState<any>(null);
 
   useEffect(() => {
     fetch('/api/auth/me')
@@ -21,7 +21,7 @@ export default function SecureWorkspace() {
       .then(data => {
         if (data.authenticated) {
           setAuthStatus('authenticated');
-          setUserRole(data.user.role);
+          setCurrentUser(data.user);
           setActiveView('dashboard');
         } else {
           setAuthStatus('unauthenticated');
@@ -44,9 +44,9 @@ export default function SecureWorkspace() {
 
   if (activeView === 'login' || authStatus === 'unauthenticated') {
     return (
-      <LoginScreen onLoginSuccess={(role: string) => {
+      <LoginScreen onLoginSuccess={(user: any) => {
         setAuthStatus('authenticated');
-        setUserRole(role);
+        setCurrentUser(user);
         setActiveView('dashboard');
       }} />
     );
@@ -61,10 +61,15 @@ export default function SecureWorkspace() {
   return (
     <div className="w-full h-screen overflow-hidden flex flex-col relative">
       {activeView === 'dashboard' ? (
-        <ProjectDashboard onOpenProject={(id: string) => {
-          setActiveProjectId(id);
-          setActiveView('canvas');
-        }} />
+        <ProjectDashboard 
+          user={currentUser} 
+          onOpenAdmin={() => setActiveView('admin')} 
+          onLogout={() => { setAuthStatus('unauthenticated'); setActiveView('login'); }}
+          onOpenProject={(id: string) => {
+            setActiveProjectId(id);
+            setActiveView('canvas');
+          }} 
+        />
       ) : (
         <ReactFlowProvider>
           <Canvas 

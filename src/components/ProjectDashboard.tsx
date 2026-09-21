@@ -1,78 +1,133 @@
 "use client";
 import { useState, useEffect } from 'react';
-import { Folder, Plus, Copy, Trash2, Play, Settings, Database, Code } from 'lucide-react';
+import { Folder, Plus, Copy, Trash2, Play, Settings, Database, Code, ShieldAlert, LogOut, User } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 
 export interface Project {
   id: string;
   name: string;
-  updatedAt: number;
-  nodeCount: number;
+  updated_at: string;
+  owner_id: string;
 }
 
 interface ProjectDashboardProps {
+  user: any;
   onOpenProject: (id: string) => void;
+  onOpenAdmin: () => void;
+  onLogout: () => void;
 }
 
-export default function ProjectDashboard({ onOpenProject }: ProjectDashboardProps) {
+export default function ProjectDashboard({ user, onOpenProject, onOpenAdmin, onLogout }: ProjectDashboardProps) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  const loadProjects = async () => {
+    try {
+      const res = await fetch('/api/pipelines');
+      if (res.ok) {
+        const data = await res.json();
+        setProjects(data.pipelines || []);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    try {
-      const stored = JSON.parse(localStorage.getItem('ARCHITECT_PROJECTS') || '[]');
-      setProjects(stored.sort((a: any, b: any) => b.updatedAt - a.updatedAt));
-    } catch {}
+    loadProjects();
   }, []);
 
-  const createProject = () => {
+  const createProject = async () => {
     const name = prompt('Project Name:', 'New Data Pipeline');
     if (!name) return;
     
-    const newProject: Project = {
-      id: `proj_${Date.now()}`,
-      name,
-      updatedAt: Date.now(),
-      nodeCount: 0
-    };
-    
-    // Create empty project state
-    localStorage.setItem(`ARCHITECT_PROJ_${newProject.id}`, JSON.stringify({ nodes: [], edges: [] }));
-    
-    const updated = [newProject, ...projects];
-    localStorage.setItem('ARCHITECT_PROJECTS', JSON.stringify(updated));
-    setProjects(updated);
-    onOpenProject(newProject.id);
+    const id = `proj_${Date.now()}`;
+    try {
+      const res = await fetch('/api/pipelines', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, name, nodes: [], edges: [] })
+      });
+      if (res.ok) {
+        onOpenProject(id);
+      } else {
+        alert('Failed to create project.');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Error creating project.');
+    }
   };
 
-  const deleteProject = (id: string) => {
+  const deleteProject = async (id: string) => {
     if (!confirm('Are you sure you want to delete this project?')) return;
-    const updated = projects.filter(p => p.id !== id);
-    localStorage.setItem('ARCHITECT_PROJECTS', JSON.stringify(updated));
-    localStorage.removeItem(`ARCHITECT_PROJ_${id}`);
-    setProjects(updated);
+    try {
+      const res = await fetch(`/api/pipelines?id=${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setProjects(projects.filter(p => p.id !== id));
+      } else {
+        alert('Failed to delete project.');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Error deleting project.');
+    }
   };
 
-  const duplicateProject = (p: Project) => {
-    const newProject: Project = {
-      id: `proj_${Date.now()}`,
-      name: `${p.name} (Copy)`,
-      updatedAt: Date.now(),
-      nodeCount: p.nodeCount
-    };
-    
-    const state = localStorage.getItem(`ARCHITECT_PROJ_${p.id}`);
-    if (state) localStorage.setItem(`ARCHITECT_PROJ_${newProject.id}`, state);
-    
-    const updated = [newProject, ...projects];
-    localStorage.setItem('ARCHITECT_PROJECTS', JSON.stringify(updated));
-    setProjects(updated);
+  const duplicateProject = async (p: Project) => {
+    const newName = `${p.name} (Copy)`;
+    const newId = `proj_${Date.now()}`;
+    try {
+      // First fetch the original project data
+      const getRes = await fetch(`/api/pipelines?id=${p.id}`);
+      if (!getRes.ok) throw new Error('Failed to fetch original project');
+      const data = await getRes.json();
+      
+      const postRes = await fetch('/api/pipelines', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: newId, name: newName, nodes: data.pipeline.data.nodes, edges: data.pipeline.data.edges })
+      });
+      if (postRes.ok) {
+        loadProjects();
+      } else {
+        alert('Failed to duplicate project.');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Error duplicating project.');
+    }
   };
 
   const filtered = projects.filter(p => p.name.toLowerCase().includes(search.toLowerCase()));
 
   return (
     <div className="w-full h-screen bg-bg text-text flex flex-col items-center py-12 px-6 overflow-auto">
+      <div className="absolute top-6 right-6 flex items-center gap-4">
+        {user && (
+          <div className="flex items-center gap-2 bg-code-bg px-3 py-1.5 rounded-md border border-border shadow-sm">
+            <User className="w-4 h-4 text-accent" />
+            <div className="flex flex-col">
+              <span className="text-xs font-semibold text-text">{user.name || user.email}</span>
+              <span className="text-[10px] text-text-muted">{user.role}</span>
+            </div>
+          </div>
+        )}
+        
+        {user?.role === 'SUPERUSER' && (
+           <button onClick={onOpenAdmin} className="px-3 py-1.5 rounded-md text-xs font-semibold bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500/20 transition-colors flex items-center gap-1.5">
+             <ShieldAlert className="w-4 h-4" /> Admin
+           </button>
+        )}
+        
+        <button onClick={onLogout} className="px-3 py-1.5 rounded-md text-xs font-semibold bg-code-bg text-text-muted border border-border hover:text-text hover:border-text-muted transition-colors flex items-center gap-1.5">
+          <LogOut className="w-4 h-4" /> Log Out
+        </button>
+      </div>
+
       <div className="max-w-5xl w-full flex flex-col gap-8">
         
         {/* Header */}
@@ -81,7 +136,7 @@ export default function ProjectDashboard({ onOpenProject }: ProjectDashboardProp
             <h1 className="text-3xl font-bold text-text-h flex items-center gap-3">
               <Database className="w-8 h-8 text-accent" /> Local Data Architect
             </h1>
-            <p className="text-text-muted">Manage your secure, local-first data pipelines.</p>
+            <p className="text-text-muted">Manage your secure, cloud-synced data pipelines.</p>
           </div>
           <button 
             onClick={createProject}
@@ -98,48 +153,74 @@ export default function ProjectDashboard({ onOpenProject }: ProjectDashboardProp
             placeholder="Search pipelines..." 
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="w-full bg-code-bg border border-border px-4 py-3 rounded-xl focus:outline-none focus:border-accent text-text"
+            className="w-full px-4 py-3 bg-code-bg border border-border rounded-lg text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/50 transition-all shadow-sm"
           />
         </div>
 
         {/* Project Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filtered.map(p => (
-            <div key={p.id} className="bg-code-bg border border-border p-5 rounded-xl flex flex-col gap-4 hover:border-accent/50 transition-colors group">
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-3 font-semibold text-text-h text-lg">
-                  <Folder className="w-5 h-5 text-accent" />
-                  {p.name}
-                </div>
-                <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
-                  <button onClick={() => duplicateProject(p)} className="p-1.5 text-text-muted hover:text-text hover:bg-bg rounded" title="Duplicate"><Copy className="w-4 h-4" /></button>
-                  <button onClick={() => deleteProject(p.id)} className="p-1.5 text-red-500 hover:text-red-400 hover:bg-red-500/10 rounded" title="Delete"><Trash2 className="w-4 h-4" /></button>
-                </div>
-              </div>
-              
-              <div className="flex-1 flex flex-col gap-1 text-sm text-text-muted">
-                <div>Nodes: <span className="text-text">{p.nodeCount}</span></div>
-                <div>Updated: {formatDistanceToNow(p.updatedAt, { addSuffix: true })}</div>
-              </div>
-              
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {loading ? (
+            <div className="text-text-muted text-sm col-span-full">Loading pipelines...</div>
+          ) : filtered.length === 0 ? (
+            <div className="col-span-full py-12 flex flex-col items-center justify-center border-2 border-dashed border-border rounded-xl bg-code-bg/50">
+              <Folder className="w-12 h-12 text-text-muted mb-4 opacity-50" />
+              <h3 className="text-lg font-medium text-text-h">No pipelines found</h3>
+              <p className="text-sm text-text-muted mt-1 mb-4">Create your first data pipeline to get started.</p>
               <button 
-                onClick={() => onOpenProject(p.id)}
-                className="w-full py-2 bg-bg border border-border rounded-lg text-text font-medium flex items-center justify-center gap-2 hover:bg-accent hover:border-accent hover:text-white transition-all"
+                onClick={createProject}
+                className="px-4 py-2 bg-accent text-white rounded-md font-medium text-sm hover-bg-lift"
               >
-                <Code className="w-4 h-4" /> Open Editor
+                Create Pipeline
               </button>
             </div>
-          ))}
+          ) : (
+            filtered.map(p => (
+              <div 
+                key={p.id} 
+                className="group bg-code-bg border border-border rounded-xl p-5 hover:border-accent/50 transition-all shadow-sm hover:shadow-glow flex flex-col gap-4 cursor-pointer"
+                onClick={() => onOpenProject(p.id)}
+              >
+                <div className="flex justify-between items-start">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center text-accent">
+                      <Code className="w-5 h-5" />
+                    </div>
+                    <div className="flex flex-col overflow-hidden">
+                      <h3 className="font-semibold text-text-h truncate" title={p.name}>{p.name}</h3>
+                      <span className="text-xs text-text-muted">
+                        Updated {p.updated_at ? formatDistanceToNow(new Date(p.updated_at + 'Z'), { addSuffix: true }) : 'just now'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
 
-          {filtered.length === 0 && (
-            <div className="col-span-full py-12 flex flex-col items-center justify-center text-text-muted border-2 border-dashed border-border rounded-xl">
-              <Folder className="w-12 h-12 mb-4 opacity-50" />
-              <p>No pipelines found.</p>
-              <button onClick={createProject} className="mt-4 text-accent hover:underline">Create your first pipeline</button>
-            </div>
+                <div className="mt-auto pt-4 border-t border-border flex items-center justify-between">
+                  <span className="text-xs font-medium text-text-muted bg-bg px-2 py-1 rounded-md border border-border">
+                    {p.owner_id === user?.id ? 'Owner' : 'Shared'}
+                  </span>
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); duplicateProject(p); }}
+                      className="p-1.5 text-text-muted hover:text-text hover:bg-bg rounded transition-colors"
+                      title="Duplicate"
+                    >
+                      <Copy className="w-4 h-4" />
+                    </button>
+                    {p.owner_id === user?.id && (
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); deleteProject(p.id); }}
+                        className="p-1.5 text-text-muted hover:text-red-500 hover:bg-red-500/10 rounded transition-colors"
+                        title="Delete"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))
           )}
         </div>
-
       </div>
     </div>
   );
