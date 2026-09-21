@@ -23,40 +23,44 @@
 @layer base {
   :root {
     --background: #F9FAFB;
-    --foreground: #1C1E23;
+    --foreground: #111827;
     
     --bg: #FFFFFF;
-    --code-bg: #F3F4F6;
-    --text: #374151;
+    --code-bg: #FFFFFF; /* Panels are usually white in Airbyte */
+    --canvas-bg: #F3F4F6; /* Very light gray for canvas depth */
+    --text: #4B5563;
     --text-h: #111827;
     --text-muted: #6B7280;
     --border: #E5E7EB;
-    --accent: #615EFC;
+    --accent: #4338CA; /* Indigo 700 */
     --accent-bg: #EEF2FF;
     --accent-border: #C7D2FE;
-    --social-bg: rgba(255, 255, 255, 0.8);
+    --social-bg: rgba(255, 255, 255, 0.9);
     --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    --node-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
   }
   .dark {
-    --background: #09090b;
-    --foreground: #fafafa;
-    --color-surface: #18181b;
-    --color-background: #09090b;
-    --color-border: #27272a;
-    --color-text-main: #fafafa;
-    --color-text-muted: #a1a1aa;
+    --background: #0F172A; /* Slate 900 */
+    --foreground: #F8FAFC;
+    --color-surface: #1E293B;
+    --color-background: #0F172A;
+    --color-border: #334155;
+    --color-text-main: #F8FAFC;
+    --color-text-muted: #94A3B8;
     
-    --bg: #111827;
-    --code-bg: #1F2937;
-    --text: #D1D5DB;
-    --text-h: #F9FAFB;
-    --text-muted: #9CA3AF;
-    --border: #374151;
-    --accent: #615EFC;
-    --accent-bg: rgba(97, 94, 252, 0.1);
-    --accent-border: rgba(97, 94, 252, 0.3);
-    --social-bg: rgba(17, 24, 39, 0.8);
-    --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5), 0 2px 4px -1px rgba(0, 0, 0, 0.4);
+    --bg: #1E293B;           /* Slate 800 for nodes/panels */
+    --code-bg: #1E293B;      
+    --canvas-bg: #0F172A;    /* Slate 900 for canvas */
+    --text: #CBD5E1;
+    --text-h: #F8FAFC;
+    --text-muted: #94A3B8;
+    --border: #334155;
+    --accent: #6366F1;       /* Indigo 500 */
+    --accent-bg: #312E81;
+    --accent-border: #4F46E5;
+    --social-bg: rgba(30, 41, 59, 0.9);
+    --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5), 0 2px 4px -1px rgba(0, 0, 0, 0.3);
+    --node-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.6), 0 4px 6px -2px rgba(0, 0, 0, 0.4);
   }
 }
 
@@ -65,39 +69,131 @@ body {
   color: var(--foreground);
 }
 
+/* ─────────────────────────────────────────────
+   ReactFlow: Strip default node chrome —
+   our custom node components handle their own styling
+───────────────────────────────────────────── */
 .react-flow__node {
-  border-radius: 6px;
+  border-radius: 0 !important;
+  overflow: visible !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+.react-flow__node-default,
+.react-flow__node-input,
+.react-flow__node-output,
+.react-flow__node-group {
+  background: var(--bg) !important;
+  color: var(--text-h) !important;
+  border-color: var(--border) !important;
+}
+
+/* ─────────────────────────────────────────────
+   ReactFlow: Canvas background pane
+───────────────────────────────────────────── */
+.react-flow__pane {
+  background-color: var(--canvas-bg) !important;
+}
+
+/* ─────────────────────────────────────────────
+   ReactFlow: Handles (connection ports)
+───────────────────────────────────────────── */
+.react-flow__handle {
+  width: 14px !important;
+  height: 28px !important;
+  border-radius: 4px !important;
+  background-color: var(--text-muted) !important;
+  border: 2px solid var(--bg) !important;
+  box-shadow: var(--shadow) !important;
+  z-index: 10 !important;
+  transition: background-color 0.15s, transform 0.15s !important;
+}
+.react-flow__handle:hover,
+.react-flow__handle-connecting {
+  background-color: var(--accent) !important;
+  transform: scale(1.15) !important;
+}
+
+/* ─────────────────────────────────────────────
+   ReactFlow: Edges
+───────────────────────────────────────────── */
+.react-flow__edge-path {
+  stroke: var(--text-muted) !important;
+  stroke-width: 2.5 !important;
+}
+.react-flow__edge.selected .react-flow__edge-path,
+.react-flow__edge:hover .react-flow__edge-path {
+  stroke: var(--accent) !important;
+  stroke-width: 3 !important;
+}
+.react-flow__connection-path {
+  stroke: var(--accent) !important;
+  stroke-width: 2.5 !important;
+  stroke-dasharray: 5 !important;
+}
+
+/* ─────────────────────────────────────────────
+   ReactFlow: Controls
+───────────────────────────────────────────── */
+.react-flow__controls {
+  background: var(--bg) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 8px !important;
+  overflow: hidden;
+  box-shadow: var(--shadow) !important;
+}
+.react-flow__controls-button {
+  background: var(--bg) !important;
+  border-bottom: 1px solid var(--border) !important;
+  color: var(--text) !important;
+}
+.react-flow__controls-button:hover {
+  background: var(--accent-bg) !important;
+}
+.react-flow__controls-button svg {
+  fill: var(--text) !important;
+}
+
+/* ─────────────────────────────────────────────
+   ReactFlow: Minimap
+───────────────────────────────────────────── */
+.react-flow__minimap {
+  background-color: var(--bg) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 8px !important;
   overflow: hidden;
 }
-
-.react-flow__handle {
-  width: 8px !important;
-  height: 16px !important;
-  border-radius: 2px !important;
-  background-color: var(--color-primary) !important;
-  border: none !important;
+.react-flow__minimap-mask {
+  fill: var(--canvas-bg) !important;
+  opacity: 0.7;
 }
 
-.react-flow__edge-path {
-  stroke: var(--color-border) !important;
-  stroke-width: 2 !important;
+/* ─────────────────────────────────────────────
+   ReactFlow: Selection
+───────────────────────────────────────────── */
+.react-flow__selection {
+  background: rgba(129, 140, 248, 0.08) !important;
+  border: 1.5px dashed rgba(129, 140, 248, 0.6) !important;
 }
-.react-flow__edge.selected .react-flow__edge-path {
-  stroke: var(--color-primary) !important;
+.react-flow__nodesselection-rect {
+  background: rgba(129, 140, 248, 0.06) !important;
+  border: 1.5px dashed rgba(129, 140, 248, 0.6) !important;
 }
 
-/* Modern Webkit Scrollbar */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+/* ─────────────────────────────────────────────
+   ReactFlow: Hide attribution badge
+───────────────────────────────────────────── */
+.react-flow__attribution {
+  display: none !important;
 }
-::-webkit-scrollbar-track {
-  background: transparent; 
-}
-::-webkit-scrollbar-thumb {
-  background: var(--border); 
-  border-radius: 4px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted); 
-}
+
+/* ─────────────────────────────────────────────
+   Modern Webkit Scrollbar
+───────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }

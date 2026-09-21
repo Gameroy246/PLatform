@@ -1,64 +1,151 @@
-# Data Architect(In Progress)
+# Local Data Architect
 
-A local-first, visual SQL pipeline builder powered by **DuckDB** and **Next.js**. 
+A secure, cloud-synced visual data engineering platform. Build, profile, and compile complex SQL pipelines in your browser using DuckDB — with multi-user authentication, role-based access control, and enterprise-grade security hardening.
 
-I built Data Architect to solve a simple problem: I hate writing boilerplate SQL for basic data transformations, but I also hate uploading my sensitive datasets to cloud SaaS platforms. This tool gives you the power of a modern data engineering pipeline (joins, aggregations, type casting, filtering) entirely in your browser, running locally on your own machine.
+---
 
-## Features
+## Overview
 
-- **Blazing Fast Local Execution:** Runs entirely on your local machine using the native Node DuckDB engine. No cloud servers, no data privacy issues. It safely processes massive datasets by leveraging DuckDB's disk-spilling architecture within a 512MB RAM constraint.
-- **Visual Node DAG:** Drag-and-drop interface powered by React Flow. Visually connect Data Sources to Transformations and watch your data flow.
-- **Dynamic Schema Awareness:** As you build your pipeline, the backend continually evaluates your sub-graphs. Click on any node, and the UI will automatically populate dropdowns with the exact columns and data types available at that specific moment in the pipeline.
-- **Dynamic Row Value Extraction:** Need to filter rows where `status = 'active'`? Don't type it out. The UI automatically queries DuckDB for a sample of the unique values in your column and gives you a dropdown to select from. 100% foolproof.
-- **Excel Resurrection:** Safely parses heavy `.xlsx` files during upload and silently streams them into lightning-fast CSVs on disk so DuckDB can process them instantly without memory crashes.
-- **Multi-File Arrays:** Upload 10 CSVs into a single node. The engine automatically handles array syntax (`read_csv_auto(['a.csv', 'b.csv'])`) to seamlessly union your data.
-- **Format Exporter:** Export your final pipeline results to **CSV**, **JSON**, or **Parquet** on the fly.
+Local Data Architect addresses a critical need for data teams: the ability to design robust data transformations quickly while maintaining strict data privacy and multi-user collaboration. By running an embedded analytical database (DuckDB) within the Node.js runtime, the application provides the power of a modern data warehouse without the security risks of external SaaS platforms.
+
+The platform operates as a **single-page application (SPA)** with a login → dashboard → canvas flow, and is deployable to platforms like **Render**, **Vercel**, or any Node.js host.
+
+---
+
+## Core Capabilities
+
+### Visual Pipeline Builder
+- **DAG Editor:** Design directed acyclic graphs for data extraction, joining, aggregation, filtering, and cleaning using a drag-and-drop React Flow canvas.
+- **20+ Node Types:** CSV, Excel, JSON, Parquet, Avro, ORC inputs; SQL, Filter, Aggregate, Join, Union, Pivot, Sort, Deduplicate, Rename, Cast, Formula, Sample, and Custom SQL transforms.
+- **Production SQL Compiler:** Topologically sorts your graph and generates production-ready CTE queries formatted for Snowflake, BigQuery, or dbt.
+- **Live Column Profiling:** Background statistical profiling computes null percentages, unique values, min/max bounds, and data types for every column in real time.
+- **Time-Travel Debugger:** The execution engine materializes each step into temporary tables. Click any historical node to inspect that exact step's data state.
+- **Pipeline Templates:** Highlight groups of nodes and save them as reusable snippets that can be dropped into any project without ID collisions.
+
+### Multi-User Authentication & Authorization
+- **JWT-Based Sessions:** Secure, HTTP-only cookie authentication with auto-generated 256-bit cryptographic secrets.
+- **Role-Based Access Control (RBAC):** Three roles — `SUPERUSER`, `ADMIN`, and `EDITOR` — each with different feature flags and permissions.
+- **CAPTCHA on Login:** Server-generated CAPTCHA challenge to prevent automated brute-force attacks.
+- **Forced Password Reset:** New accounts created by a Superuser are flagged to require a mandatory password change on first login.
+- **Admin Panel:** Superusers and Admins can create, manage, and delete user accounts from a dedicated panel accessible from the Project Dashboard.
+
+### Cloud Sync & Collaboration
+- **Server-Side Pipeline Storage:** All pipelines are stored in a SQLite database on the server. Pipelines persist across browsers, devices, and sessions.
+- **Pipeline Sharing:** Pipeline owners (and Superusers) can share individual canvases with specific users via a sharing modal.
+- **Access-Controlled Reads:** Users only see pipelines they own or that have been explicitly shared with them. Superusers see all pipelines.
+- **Auto-Save:** The canvas auto-saves pipeline state to the cloud on every significant change.
+
+### Security Hardening
+- **Rate Limiting:** In-memory rate limiters on `/api/run` and `/api/auth/login` to prevent DDoS and brute-force attacks (HTTP 429 responses).
+- **Server-Side SQL Generation:** SQL is generated exclusively on the backend from node metadata. The frontend never sends raw SQL strings, eliminating SQL injection vectors.
+- **Path Traversal Protection:** All file paths are sanitized (`file.split(/[/\\]/).pop()`) to prevent directory traversal attacks.
+- **Formula Sanitization:** User-provided formulas are validated against a strict character whitelist and blocked from containing SQL keywords (`SELECT`, `DROP`, `DELETE`, etc.).
+- **Cryptographic Secret Management:** JWT secrets are auto-generated using `crypto.randomBytes(32)` and persisted to `.jwt_secret` if no environment variable is provided.
+- **RBAC Enforcement:** Every API endpoint validates the user session and role before executing, preventing privilege escalation and IDOR attacks.
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     Next.js SPA (React)                     │
+│  LoginScreen → ProjectDashboard → Canvas (React Flow DAG)   │
+└──────────────────────────┬──────────────────────────────────┘
+                           │  HTTP (JSON)
+┌──────────────────────────▼──────────────────────────────────┐
+│                   Next.js API Routes                        │
+│                                                             │
+│  /api/auth/login    – JWT auth + CAPTCHA + rate limiting    │
+│  /api/auth/me       – Session validation                    │
+│  /api/auth/logout   – Cookie clearing                       │
+│  /api/admin/users   – User CRUD (SUPERUSER/ADMIN only)      │
+│  /api/pipelines     – Pipeline CRUD + access control        │
+│  /api/pipelines/share – Pipeline sharing                    │
+│  /api/run           – Pipeline execution (DuckDB)           │
+│  /api/preview       – Live data preview + profiling         │
+│  /api/upload        – File upload to workspace              │
+│  /api/download      – File export                           │
+│  /api/schema        – Column schema extraction              │
+│  /api/history       – Execution history                     │
+│  /api/values        – Distinct column values                │
+└──────────┬─────────────────────────────┬────────────────────┘
+           │                             │
+    ┌──────▼──────┐              ┌───────▼───────┐
+    │   DuckDB    │              │    SQLite      │
+    │  (Analytics)│              │  (Users, Auth, │
+    │             │              │   Pipelines,   │
+    │             │              │   Audit Logs)  │
+    └─────────────┘              └────────────────┘
+```
+
+1. **Canvas State:** React Flow manages the DAG state on the client.
+2. **Execution Engine (`/api/run`):** Compiles the graph into nested `CREATE TEMP TABLE` DuckDB statements, executed in topological order.
+3. **Profiling Engine (`/api/preview`):** Fetches sample data and runs `SUMMARIZE` to return rich column statistics.
+4. **Auth Layer:** JWT tokens in HTTP-only cookies. Every API route calls `getSession()` to verify identity and role.
+5. **System Database (SQLite):** Stores users, pipelines, sharing permissions, and audit logs.
+
+---
 
 ## Getting Started
 
 ### Prerequisites
 - Node.js 18+
-- npm or pnpm
 
 ### Installation
 
-1. Clone the repository
+1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/Architect.git
-cd Architect
+git clone https://github.com/Gameroy246/PLatform.git
+cd PLatform
 ```
 
-2. Install dependencies
+2. Install the dependencies:
 ```bash
 npm install
 ```
 
-3. Start the development server
+3. Run the development server:
 ```bash
 npm run dev
 ```
 
-4. Open [http://localhost:3000](http://localhost:3000) in your browser.
+4. Navigate to `http://localhost:3000` in your web browser.
 
-## Architecture Overview
+### Default Credentials
 
-The system operates in a stateless, reactive loop:
-1. **The Canvas (`React Flow`)** manages the Directed Acyclic Graph (DAG) state.
-2. **The Schema Engine (`/api/schema`)** topologically sorts the graph and evaluates all upstream parents to resolve exact column types dynamically for the properties panel.
-3. **The Value Engine (`/api/values`)** runs `SELECT DISTINCT` on upstream nodes to populate filter dropdowns with actual data.
-4. **The Execution Engine (`/api/run`)** compiles the final graph into nested `CREATE TEMP TABLE` DuckDB statements and executes them sequentially.
+| Role | Email | Password |
+|------|-------|----------|
+| Superuser | `admin@architect.local` | `admin123` |
 
-## Built With
+> **Important:** Change the default Superuser password immediately after first login.
 
-- [Next.js](https://nextjs.org/) (App Router)
-- [DuckDB](https://duckdb.org/) (Node.js API)
-- [React Flow](https://reactflow.dev/) (Visual DAG)
-- [Lucide React](https://lucide.dev/) (Icons)
-- [Tailwind CSS](https://tailwindcss.com/) (Styling)
-- [XLSX](https://sheetjs.com/) (Excel conversion)
+### Environment Variables (Optional)
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `JWT_SECRET` | Secret key for signing JWT tokens | Auto-generated and persisted to `.jwt_secret` |
+| `PORT` | Server port | `3000` |
+
+---
+
+## Deployment
+
+The application is designed to be deployed on any Node.js hosting platform:
+
+```bash
+npm run build
+npm start
+```
+
+Compatible with **Render**, **Railway**, **Fly.io**, **Vercel**, and standard VPS/Docker deployments.
+
+---
 
 ## Contributing
-Feel free to open issues or submit pull requests. If you want to add a new Transformation Node, check out the `generateSQL` function inside `Canvas.tsx` to see how the queries are compiled. Feel free to report any bugs
+
+Review the `CONTRIBUTING.md` guidelines if you want to submit a pull request. For bug reports or feature requests, please use the GitHub issue tracker.
 
 ## License
-This project is licensed under the MIT License - see the LICENSE file for details.
+
+This project is licensed under the MIT License. See the `LICENSE` file for details.

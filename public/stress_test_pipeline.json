@@ -1,0 +1,288 @@
+{
+  "version": "1.0",
+  "savedNodes": [
+    {
+      "id": "n1",
+      "type": "dataSource",
+      "position": { "x": 100, "y": 100 },
+      "data": {
+        "label": "N1: Excel Input",
+        "operation": "excelInput",
+        "file": "D:/data/uncleaned.xlsx"
+      }
+    },
+    {
+      "id": "n2",
+      "type": "transform",
+      "position": { "x": 350, "y": 100 },
+      "data": {
+        "label": "N2: Drop Heavy Text",
+        "operation": "dropColumns",
+        "columns": "Subject Notes, Country/Series-specific Notes"
+      }
+    },
+    {
+      "id": "n3",
+      "type": "transform",
+      "position": { "x": 600, "y": 100 },
+      "data": {
+        "label": "N3: Trim Whitespace",
+        "operation": "trimWhitespace",
+        "column": "Country",
+        "newCol": "country_trim"
+      }
+    },
+    {
+      "id": "n4",
+      "type": "transform",
+      "position": { "x": 850, "y": 100 },
+      "data": {
+        "label": "N4: Text Casing",
+        "operation": "textCasing",
+        "column": "ISO",
+        "casing": "UPPER",
+        "newCol": "iso_upper"
+      }
+    },
+    {
+      "id": "n5",
+      "type": "transform",
+      "position": { "x": 1100, "y": 100 },
+      "data": {
+        "label": "N5: UNPIVOT Years",
+        "operation": "customSql",
+        "sql": "SELECT \"WEO Country Code\", \"ISO\", \"WEO Subject Code\", \"Country\", \"Subject Descriptor\", \"Units\", \"Scale\", TRY_CAST(year_name AS INTEGER) AS year, TRY_CAST(NULLIF(REPLACE(value_raw, ',', ''), 'n/a') AS DOUBLE) AS value_num FROM ( UNPIVOT {parent} ON \"2000\",\"2001\",\"2002\",\"2003\",\"2004\",\"2005\",\"2006\",\"2007\",\"2008\",\"2009\",\"2010\",\"2011\",\"2012\",\"2013\",\"2014\",\"2015\",\"2016\",\"2017\",\"2018\",\"2019\",\"2020\",\"2021\",\"2022\",\"2023\",\"2024\",\"2025\",\"2026\",\"2027\",\"2028\",\"2029\",\"2030\" INTO NAME year_name VALUE value_raw ) u"
+      }
+    },
+    {
+      "id": "n6",
+      "type": "transform",
+      "position": { "x": 1350, "y": 100 },
+      "data": {
+        "label": "N6: Remove Nulls",
+        "operation": "removeNulls",
+        "column": "value_num"
+      }
+    },
+    {
+      "id": "n7",
+      "type": "transform",
+      "position": { "x": 1600, "y": 100 },
+      "data": {
+        "label": "N7: Filter >= 0",
+        "operation": "filterRows",
+        "column": "value_num",
+        "operator": ">=",
+        "value": "0"
+      }
+    },
+    {
+      "id": "n8",
+      "type": "transform",
+      "position": { "x": 1850, "y": 100 },
+      "data": {
+        "label": "N8: Conditional Logic",
+        "operation": "conditionalLogic",
+        "condCol": "value_num",
+        "condOp": ">",
+        "condVal": "1000",
+        "thenVal": "HIGH",
+        "elseVal": "NORMAL",
+        "newCol": "value_band"
+      }
+    },
+    {
+      "id": "n9",
+      "type": "transform",
+      "position": { "x": 2100, "y": 100 },
+      "data": {
+        "label": "N9: Hash Column",
+        "operation": "hashColumn",
+        "column": "Country",
+        "algorithm": "MD5",
+        "newCol": "hash_val"
+      }
+    },
+
+    {
+      "id": "n10",
+      "type": "transform",
+      "position": { "x": 2400, "y": -100 },
+      "data": {
+        "label": "N10: Running Total",
+        "operation": "runningTotal",
+        "valCol": "value_num",
+        "orderCol": "year",
+        "partCol": "Country",
+        "newCol": "running_value"
+      }
+    },
+    {
+      "id": "n11",
+      "type": "transform",
+      "position": { "x": 2650, "y": -100 },
+      "data": {
+        "label": "N11: Moving Average",
+        "operation": "movingAvg",
+        "valCol": "value_num",
+        "orderCol": "year",
+        "partCol": "Country",
+        "window": "5",
+        "newCol": "ma5_value"
+      }
+    },
+    {
+      "id": "n12",
+      "type": "transform",
+      "position": { "x": 2900, "y": -100 },
+      "data": {
+        "label": "N12: Rank Rows",
+        "operation": "rankRows",
+        "orderCol": "value_num",
+        "partCol": "Country",
+        "newCol": "rank"
+      }
+    },
+    {
+      "id": "n13",
+      "type": "transform",
+      "position": { "x": 3150, "y": -100 },
+      "data": {
+        "label": "N13: NTILE Deciles",
+        "operation": "ntile",
+        "orderCol": "value_num",
+        "partCol": "Country",
+        "buckets": "10",
+        "newCol": "tile"
+      }
+    },
+
+    {
+      "id": "n14",
+      "type": "transform",
+      "position": { "x": 2400, "y": 300 },
+      "data": {
+        "label": "N14: Group By Year",
+        "operation": "groupBy",
+        "groupCol": "year",
+        "aggFunc": "SUM",
+        "valCol": "value_num",
+        "newCol": "agg_val"
+      }
+    },
+    {
+      "id": "n15",
+      "type": "transform",
+      "position": { "x": 2650, "y": 300 },
+      "data": {
+        "label": "N15: Rename Year",
+        "operation": "renameColumn",
+        "oldCol": "year",
+        "newCol": "agg_year"
+      }
+    },
+    {
+      "id": "n16",
+      "type": "transform",
+      "position": { "x": 2900, "y": 300 },
+      "data": {
+        "label": "N16: Sort DESC",
+        "operation": "sortRows",
+        "column": "agg_val",
+        "direction": "DESC"
+      }
+    },
+    {
+      "id": "n17",
+      "type": "transform",
+      "position": { "x": 3150, "y": 300 },
+      "data": {
+        "label": "N17: Top 15 Years",
+        "operation": "topN",
+        "column": "agg_val",
+        "direction": "DESC",
+        "limit": "15"
+      }
+    },
+
+    {
+      "id": "n18",
+      "type": "transform",
+      "position": { "x": 3450, "y": 100 },
+      "data": {
+        "label": "N18: Left Join Branches",
+        "operation": "leftJoin",
+        "condition": "\"year\" = \"agg_year\""
+      }
+    },
+    {
+      "id": "n19",
+      "type": "transform",
+      "position": { "x": 3700, "y": 100 },
+      "data": {
+        "label": "N19: Row ID & Hash",
+        "operation": "customSql",
+        "sql": "SELECT *, row_number() OVER () AS row_id, md5(CAST(random() AS VARCHAR)) AS fuzz_hash FROM {parent}"
+      }
+    },
+    {
+      "id": "n20",
+      "type": "transform",
+      "position": { "x": 3950, "y": 100 },
+      "data": {
+        "label": "N20: Bucketed Summary",
+        "operation": "customSql",
+        "sql": "SELECT (row_id % 97) AS bucket_id, COUNT(*) AS cnt, AVG(CAST(value_num AS DOUBLE)) AS avg_value, SUM(CAST(value_num AS DOUBLE)) AS sum_value FROM {parent} GROUP BY 1"
+      }
+    },
+    {
+      "id": "n21",
+      "type": "transform",
+      "position": { "x": 4200, "y": 100 },
+      "data": {
+        "label": "N21: Sort Final",
+        "operation": "sortRows",
+        "column": "cnt",
+        "direction": "DESC"
+      }
+    },
+    {
+      "id": "n22",
+      "type": "transform",
+      "position": { "x": 4450, "y": 100 },
+      "data": {
+        "label": "N22: Export CSV",
+        "operation": "exportCsv",
+        "file": "stress_test_output.csv"
+      }
+    }
+  ],
+  "savedEdges": [
+    { "id": "e1-2", "source": "n1", "target": "n2", "animated": true },
+    { "id": "e2-3", "source": "n2", "target": "n3", "animated": true },
+    { "id": "e3-4", "source": "n3", "target": "n4", "animated": true },
+    { "id": "e4-5", "source": "n4", "target": "n5", "animated": true },
+    { "id": "e5-6", "source": "n5", "target": "n6", "animated": true },
+    { "id": "e6-7", "source": "n6", "target": "n7", "animated": true },
+    { "id": "e7-8", "source": "n7", "target": "n8", "animated": true },
+    { "id": "e8-9", "source": "n8", "target": "n9", "animated": true },
+
+    { "id": "e9-10", "source": "n9", "target": "n10", "animated": true },
+    { "id": "e10-11", "source": "n10", "target": "n11", "animated": true },
+    { "id": "e11-12", "source": "n11", "target": "n12", "animated": true },
+    { "id": "e12-13", "source": "n12", "target": "n13", "animated": true },
+
+    { "id": "e9-14", "source": "n9", "target": "n14", "animated": true },
+    { "id": "e14-15", "source": "n14", "target": "n15", "animated": true },
+    { "id": "e15-16", "source": "n15", "target": "n16", "animated": true },
+    { "id": "e16-17", "source": "n16", "target": "n17", "animated": true },
+
+    { "id": "e13-18", "source": "n13", "target": "n18", "animated": true },
+    { "id": "e17-18", "source": "n17", "target": "n18", "animated": true },
+
+    { "id": "e18-19", "source": "n18", "target": "n19", "animated": true },
+    { "id": "e19-20", "source": "n19", "target": "n20", "animated": true },
+    { "id": "e20-21", "source": "n20", "target": "n21", "animated": true },
+    { "id": "e21-22", "source": "n21", "target": "n22", "animated": true }
+  ]
+}

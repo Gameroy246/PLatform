@@ -4,7 +4,7 @@ import path from "path";
 import os from "os";
 import * as xlsx from "xlsx";
 
-const WORKSPACE_DIR = path.join(os.tmpdir(), "LocalDataArchitect_Workspace");
+const WORKSPACE_DIR = path.join(os.homedir(), ".architect");
 
 export async function POST(req: Request) {
   try {
@@ -26,41 +26,45 @@ export async function POST(req: Request) {
     const uniqueFilename = `${Date.now()}-${safeName}`;
     const destinationPath = path.join(WORKSPACE_DIR, uniqueFilename);
     
-    let finalPath = destinationPath;
+    const ext = path.extname(file.name).toLowerCase();
+    const finalExt = ext === ".xlsx" || ext === ".xls" ? ".csv" : ext;
+    const finalPath = destinationPath.replace(/\.[^/.]+$/, "") + finalExt;
     let headers: string[] = [];
 
-    const ext = path.extname(file.name).toLowerCase();
-
     if (ext === ".xlsx" || ext === ".xls") {
-      // Safely convert Excel to CSV on the fly to prevent DuckDB memory crashes
-      const workbook = xlsx.read(buffer, { type: "buffer" });
+      const workbook = xlsx.read(buffer, { type: "buffer", raw: true, cellDates: true });
       const sheetName = workbook.SheetNames[0];
       const sheet = workbook.Sheets[sheetName];
-      const csvData = xlsx.utils.sheet_to_csv(sheet);
+      const csvData = xlsx.utils.sheet_to_csv(sheet, { blankrows: true, rawNumbers: false });
       
-      finalPath = destinationPath.replace(/\.xlsx?$/i, ".csv");
       fs.writeFileSync(finalPath, csvData);
       
-      const firstLine = csvData.split('\n')[0] || '';
-      headers = firstLine.split(',').map(h => h.trim());
+      const rows = csvData.split('\n');
+      if (rows.length > 0) headers = rows[0].split(',').map(h => h.replace(/^["']|["']$/g, ''));
     } else {
-      fs.writeFileSync(destinationPath, buffer);
+      fs.writeFileSync(finalPath, buffer);
       
-      if (ext === ".csv") {
-        const firstLine = buffer.toString('utf-8').split('\n')[0] || '';
-        headers = firstLine.split(',').map(h => h.trim());
+      if (ext === '.csv') {
+          const lines = buffer.toString('utf-8').split('\n');
+          if (lines.length > 0) headers = lines[0].split(',').map(h => h.replace(/^["']|["']$/g, ''));
+      } else if (ext === '.json') {
+          try {
+              const data = JSON.parse(buffer.toString('utf-8'));
+              if (Array.isArray(data) && data.length > 0) headers = Object.keys(data[0]);
+              else if (typeof data === 'object') headers = Object.keys(data);
+          } catch(e) {}
       }
     }
 
-    return NextResponse.json({ 
-      success: true, 
+    return NextResponse.json({
+      success: true,
       path: finalPath,
-      headers: headers,
-      message: ext === ".xlsx" ? "Excel file securely converted to CSV format." : "File uploaded securely to workspace."
+      name: file.name,
+      size: buffer.length,
+      headers: headers
     });
-
   } catch (error: any) {
-    console.error("Upload API Error:", error);
-    return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
+    console.error("Upload error:", error);
+    return NextResponse.json({ error: error.message || "Upload failed" }, { status: 500 });
   }
 }

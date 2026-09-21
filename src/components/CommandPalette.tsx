@@ -1,17 +1,26 @@
 "use client";
 import { useState, useEffect, useRef } from 'react';
-import { Search, Plus, Play, Settings } from 'lucide-react';
+import { Search, Plus, GitMerge, Settings, Play } from 'lucide-react';
 
 interface CommandPaletteProps {
+  userFeatures?: string[];
   onAddNode: (type: string, operation: string) => void;
   onRunPipeline: () => void;
   onOpenVariables?: () => void;
 }
 
-export default function CommandPalette({ onAddNode, onRunPipeline, onOpenVariables }: CommandPaletteProps) {
+export default function CommandPalette({ onAddNode, onRunPipeline, onOpenVariables, userFeatures = ['all'] }: CommandPaletteProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [macros, setMacros] = useState<any[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('ARCHITECT_MACROS') || '[]');
+      setMacros(stored);
+    } catch {}
+  }, [isOpen]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -39,13 +48,26 @@ export default function CommandPalette({ onAddNode, onRunPipeline, onOpenVariabl
 
   if (!isOpen) return null;
 
-  const commands = [
+  const allCommands = [
     { name: 'Run Pipeline', icon: Play, action: onRunPipeline },
     { name: 'Add Node: CSV Input', icon: Plus, action: () => onAddNode('dataSource', 'csvInput') },
     { name: 'Add Node: JSON Input', icon: Plus, action: () => onAddNode('dataSource', 'jsonInput') },
     { name: 'Add Node: Parquet Input', icon: Plus, action: () => onAddNode('dataSource', 'parquetInput') },
     { name: 'Add Node: Excel Input', icon: Plus, action: () => onAddNode('dataSource', 'excelInput') },
     { name: 'Add Node: PostgreSQL Input', icon: Plus, action: () => onAddNode('dataSource', 'postgresInput') },
+    { name: 'Add Node: MySQL Input', icon: Plus, action: () => onAddNode('dataSource', 'mysqlInput') },
+    { name: 'Add Node: SQL Server Input', icon: Plus, action: () => onAddNode('dataSource', 'sqlserverInput') },
+    { name: 'Add Node: MongoDB Input', icon: Plus, action: () => onAddNode('dataSource', 'mongodbInput') },
+    { name: 'Add Node: Arrow Input', icon: Plus, action: () => onAddNode('dataSource', 'arrowInput') },
+    { name: 'Add Node: REST API', icon: Plus, action: () => onAddNode('dataSource', 'restApiInput') },
+    { name: 'Add Node: GraphQL', icon: Plus, action: () => onAddNode('dataSource', 'graphQLInput') },
+    { name: 'Add Node: XML Input', icon: Plus, action: () => onAddNode('dataSource', 'xmlInput') },
+    { name: 'Add Node: Avro Input', icon: Plus, action: () => onAddNode('dataSource', 'avroInput') },
+    { name: 'Add Node: ORC Input', icon: Plus, action: () => onAddNode('dataSource', 'orcInput') },
+    { name: 'Add Node: Feather Input', icon: Plus, action: () => onAddNode('dataSource', 'featherInput') },
+    { name: 'Add Node: Fixed Width Input', icon: Plus, action: () => onAddNode('dataSource', 'fixedWidthInput') },
+    { name: 'Add Node: SQLite Input', icon: Plus, action: () => onAddNode('dataSource', 'sqliteInput') },
+    { name: 'Add Node: DuckDB Input', icon: Plus, action: () => onAddNode('dataSource', 'duckdbInput') },
     
     { name: 'Add Node: Remove Duplicates', icon: Plus, action: () => onAddNode('transform', 'removeDuplicates') },
     { name: 'Add Node: Remove Nulls', icon: Plus, action: () => onAddNode('transform', 'removeNulls') },
@@ -68,9 +90,10 @@ export default function CommandPalette({ onAddNode, onRunPipeline, onOpenVariabl
     { name: 'Add Node: Split Part', icon: Plus, action: () => onAddNode('transform', 'splitPart') },
     { name: 'Add Node: String Length', icon: Plus, action: () => onAddNode('transform', 'stringLength') },
     
-    { name: 'Add Node: Inner Join', icon: Plus, action: () => onAddNode('transform', 'innerJoin') },
-    { name: 'Add Node: Left Join', icon: Plus, action: () => onAddNode('transform', 'leftJoin') },
-    { name: 'Add Node: Union All', icon: Plus, action: () => onAddNode('transform', 'unionAll') },
+    { name: 'Add Node: Inner Join', icon: GitMerge, action: () => onAddNode('transform', 'innerJoin') },
+    { name: 'Add Node: Left Join', icon: GitMerge, action: () => onAddNode('transform', 'leftJoin') },
+    { name: 'Add Node: Self Join', icon: GitMerge, action: () => onAddNode('transform', 'selfJoin') },
+    { name: 'Add Node: Union All', icon: GitMerge, action: () => onAddNode('transform', 'unionAll') },
     
     { name: 'Add Node: Group By', icon: Plus, action: () => onAddNode('transform', 'groupBy') },
     { name: 'Add Node: Window Function', icon: Plus, action: () => onAddNode('transform', 'windowFunction') },
@@ -78,6 +101,22 @@ export default function CommandPalette({ onAddNode, onRunPipeline, onOpenVariabl
     { name: 'Add Node: Unpivot/Melt', icon: Plus, action: () => onAddNode('transform', 'unpivotTable') },
     { name: 'Add Node: Rollup', icon: Plus, action: () => onAddNode('transform', 'rollup') },
     { name: 'Add Node: Summary Stats', icon: Plus, action: () => onAddNode('transform', 'summaryStats') },
+    { name: 'Add Node: Outlier Detection', icon: Plus, action: () => onAddNode('transform', 'outlierDetection') },
+    { name: 'Add Node: Duplicate Analysis', icon: Plus, action: () => onAddNode('transform', 'duplicateAnalysis') },
+    { name: 'Add Node: Median', icon: Plus, action: () => onAddNode('transform', 'medianAgg') },
+    { name: 'Add Node: Mode', icon: Plus, action: () => onAddNode('transform', 'modeAgg') },
+    { name: 'Add Node: Std Dev', icon: Plus, action: () => onAddNode('transform', 'stdDevAgg') },
+    { name: 'Add Node: Variance', icon: Plus, action: () => onAddNode('transform', 'varianceAgg') },
+    { name: 'Add Node: Correlation Matrix', icon: GitMerge, action: () => onAddNode('transform', 'correlationMatrix') },
+    
+    { name: 'Add Node: Data Contract', icon: Settings, action: () => onAddNode('transform', 'dataContract') },
+    { name: 'Add Node: Auto Column Map', icon: Settings, action: () => onAddNode('transform', 'autoMap') },
+    
+    { name: 'Add Node: Moving Average', icon: Plus, action: () => onAddNode('transform', 'movingAverage') },
+    { name: 'Add Node: Running Total', icon: Plus, action: () => onAddNode('transform', 'runningTotal') },
+    { name: 'Add Node: Normalize', icon: Plus, action: () => onAddNode('transform', 'normalizeColumn') },
+    { name: 'Add Node: Standardize', icon: Plus, action: () => onAddNode('transform', 'standardizeColumn') },
+    { name: 'Add Node: Regex Match', icon: Plus, action: () => onAddNode('transform', 'regexMatch') },
     
     { name: 'Add Node: Math Formula', icon: Plus, action: () => onAddNode('transform', 'mathFormula') },
     { name: 'Add Node: Extract Year', icon: Plus, action: () => onAddNode('transform', 'extractYear') },
@@ -85,10 +124,40 @@ export default function CommandPalette({ onAddNode, onRunPipeline, onOpenVariabl
     { name: 'Add Node: Export CSV', icon: Plus, action: () => onAddNode('transform', 'exportCsv') },
     
     { name: 'Add Node: Custom SQL', icon: Plus, action: () => onAddNode('transform', 'customSql') },
-    { name: 'Add Node: AI Transform', icon: Plus, action: () => onAddNode('transform', 'aiTransform') },
     
     { name: 'Variables & Settings', icon: Settings, action: () => onOpenVariables && onOpenVariables() },
+    ...macros.map(m => ({
+      name: `Add Snippet: ${m.name}`,
+      icon: Plus,
+      action: () => onAddNode('macro', m.id)
+    }))
   ];
+
+  const commands = allCommands.filter(c => {
+    if (userFeatures.includes('all')) return true;
+    if (c.name.includes('Add Node:')) {
+       const typeMap: any = {
+         'CSV Input': 'csvInput', 'JSON Input': 'jsonInput', 'Parquet Input': 'parquetInput', 'Excel Input': 'excelInput',
+         'PostgreSQL Input': 'postgresInput', 'MySQL Input': 'mysqlInput', 'SQL Server Input': 'sqlserverInput', 'MongoDB Input': 'mongodbInput',
+         'Arrow Input': 'arrowInput', 'REST API': 'restApiInput', 'GraphQL': 'graphQLInput', 'XML Input': 'xmlInput',
+         'Avro Input': 'avroInput', 'ORC Input': 'orcInput', 'Feather Input': 'featherInput', 'Fixed Width Input': 'fixedWidthInput',
+         'SQLite Input': 'sqliteInput', 'DuckDB Input': 'duckdbInput',
+         'Remove Duplicates': 'removeDuplicates', 'Remove Nulls': 'removeNulls', 'Fill Missing': 'fillMissing', 'Type Cast': 'typeConversion',
+         'Trim Whitespace': 'trimWhitespace', 'Text Casing': 'textCasing', 'Replace Text': 'replaceText', 'Regex Extract': 'regexExtract',
+         'Drop Columns': 'dropColumns', 'Rename Column': 'renameColumn', 'Filter Rows': 'filterRows', 'Sort Rows': 'sortRows',
+         'Top N': 'topN', 'Sample Rows': 'sampleRows', 'Date Truncate': 'dateTruncate', 'Date Arithmetic': 'dateArithmetic',
+         'If/Then Logic': 'conditionalLogic', 'Split Part': 'splitPart', 'String Length': 'stringLength',
+         'Inner Join': 'innerJoin', 'Left Join': 'leftJoin', 'Self Join': 'selfJoin', 'Union All': 'unionAll',
+         'Group By': 'groupBy', 'Window Function': 'windowFunction', 'Pivot Table': 'pivotTable', 'Unpivot/Melt': 'unpivotTable',
+         'Calculate Math': 'calculateMath', 'Aggregate Math': 'aggregateMath', 'Normalize': 'normalizeMath', 'Rounding': 'roundingMath',
+         'Export to CSV': 'exportCsv'
+       };
+       const nodeName = c.name.replace('Add Node: ', '');
+       const key = typeMap[nodeName];
+       if (key) return userFeatures.includes(key);
+    }
+    return true;
+  });
 
   const filteredCommands = commands.filter((c) =>
     c.name.toLowerCase().includes(search.toLowerCase())
