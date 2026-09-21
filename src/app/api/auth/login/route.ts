@@ -92,7 +92,7 @@ export async function POST(req: Request) {
     });
 
     logAudit(user.id, 'LOGIN_SUCCESS', {});
-    return NextResponse.json({ success: true, role: user.role });
+    return NextResponse.json({ success: true, user: { id: user.id, email: user.email, role: user.role, mfa_enabled: user.mfa_enabled === 1 } });
     
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });

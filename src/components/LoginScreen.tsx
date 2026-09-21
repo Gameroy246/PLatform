@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 
 import { ShieldCheck, Mail, Lock, RefreshCw, KeyRound, AlertTriangle } from 'lucide-react';
 
-export default function LoginScreen({ onLoginSuccess }: { onLoginSuccess: (role: string) => void }) {
+export default function LoginScreen({ onLoginSuccess }: { onLoginSuccess: (user: any) => void }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [captchaText, setCaptchaText] = useState('');
@@ -95,7 +95,7 @@ export default function LoginScreen({ onLoginSuccess }: { onLoginSuccess: (role:
       }
       
       if (data.success) {
-         onLoginSuccess(data.role);
+         onLoginSuccess(data.user);
       }
     } catch (err: any) {
       setError(err.message);
