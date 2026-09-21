@@ -53,11 +53,52 @@ system.db-wal
 # logs
 audit.log
 
-# scratch / patch scripts
-*.patch.js
-
-# test data
-*.test.csv
-
 # temp dirs
 .tmp/
+scripts/
+
+# scratch patch scripts (used during development)
+addCol.js
+append.js
+authPatch.js
+fixButtons.js
+fixLogin.js
+fixMap.js
+loadLogic.js
+loginHardening.js
+loginUI.js
+replace.js
+replace_inputs.js
+runPatch.js
+shareUI.js
+generate_vast.js
+
+# test scripts
+test.js
+test_coalesce.js
+test_coalesce_2.js
+test_crash.js
+test_crash2.js
+test_ifnull.js
+test_memory.js
+test_try_cast.js
+
+# test data files
+bad.csv
+bad2.csv
+data1.csv
+data2.csv
+data3.csv
+test1.csv
+test2.csv
+test3.csv
+test4.csv
+users.csv
+orders.json
+extensive-test-pipeline.json
+stress_test_pipeline.json
+
+# working docs
+audit_report.md
+implementation_plan.md
+monaco_ssr_report.md
