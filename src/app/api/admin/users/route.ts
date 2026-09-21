@@ -22,7 +22,7 @@ export async function POST(req: Request) {
     const { email, password, role } = await req.json();
     const id = 'usr_' + crypto.randomBytes(8).toString('hex');
     const hash = bcrypt.hashSync(password, 10);
-    const stmt = db.prepare(`INSERT INTO users (id, email, password_hash, role) VALUES (?, ?, ?, ?)`);
+    const stmt = db.prepare(`INSERT INTO users (id, email, password_hash, role, force_password_change) VALUES (?, ?, ?, ?, 1)`);
     stmt.run(id, email, hash, role || 'EDITOR');
     const session = await getSession();
     logAudit(session?.id || null, 'CREATE_USER', { targetEmail: email, role });

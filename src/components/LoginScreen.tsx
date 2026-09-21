@@ -12,6 +12,9 @@ export default function LoginScreen({ onLoginSuccess }: { onLoginSuccess: (role:
   const [captchaHash, setCaptchaHash] = useState('');
   
   const [requireOtp, setRequireOtp] = useState(false);
+  const [requirePasswordChange, setRequirePasswordChange] = useState(false);
+  const [tempToken, setTempToken] = useState('');
+  const [newPassword, setNewPassword] = useState('');
   const [otp, setOtp] = useState('');
   
   const [loading, setLoading] = useState(false);
@@ -38,6 +41,33 @@ export default function LoginScreen({ onLoginSuccess }: { onLoginSuccess: (role:
     e.preventDefault();
     setError('');
     setLoading(true);
+
+    if (requirePasswordChange) {
+      try {
+        const res = await fetch('/api/auth/reset-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, token: tempToken, newPassword })
+        });
+        if (res.ok) {
+           // Successfully reset, let's log them in by clearing the requirement and recalling login
+           alert("Password changed successfully. Please log in with your new password.");
+           setRequirePasswordChange(false);
+           setPassword('');
+           setTempToken('');
+           setCaptchaText('');
+           fetchCaptcha();
+        } else {
+           const data = await res.json();
+           setError(data.error || 'Failed to change password');
+        }
+      } catch (err) {
+        setError('Network error');
+      }
+      setLoading(false);
+      return;
+    }
+
     
     try {
       const res = await fetch('/api/auth/login', {
@@ -47,6 +77,13 @@ export default function LoginScreen({ onLoginSuccess }: { onLoginSuccess: (role:
       });
       
       const data = await res.json();
+      
+      if (res.ok && data.requirePasswordChange) {
+        setRequirePasswordChange(true);
+        setTempToken(data.tempToken);
+        setLoading(false);
+        return;
+      }
       
       if (!res.ok) {
          if (data.requireOtp) {
@@ -90,7 +127,26 @@ export default function LoginScreen({ onLoginSuccess }: { onLoginSuccess: (role:
         )}
 
         <form onSubmit={handleLogin} className="flex flex-col gap-5">
-          {!requireOtp ? (
+          {requirePasswordChange ? (
+            <>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-text-muted uppercase tracking-wider">New Password Required</label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <Lock className="w-4 h-4 text-text-muted" />
+                  </div>
+                  <input 
+                    type="password" 
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    required
+                    className="w-full bg-bg border border-border rounded-lg py-2.5 pl-10 pr-4 text-sm text-text focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all"
+                    placeholder="Enter a new strong password"
+                  />
+                </div>
+              </div>
+            </>
+          ) : !requireOtp ? (
             <>
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-text-muted uppercase tracking-wider">Email Address</label>
@@ -176,11 +232,11 @@ export default function LoginScreen({ onLoginSuccess }: { onLoginSuccess: (role:
 
           <button 
             type="submit" 
-            disabled={loading || (!requireOtp && !captchaText)}
+            disabled={loading || (!requireOtp && !requirePasswordChange && !captchaText)}
             className="w-full mt-4 bg-accent text-white font-medium rounded-lg py-2.5 flex items-center justify-center gap-2 hover:opacity-90 disabled:opacity-50 transition-opacity shadow-[0_0_15px_rgba(139,92,246,0.2)]"
           >
             {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
-            {requireOtp ? 'Verify OTP' : 'Secure Login'}
+            {requirePasswordChange ? 'Change Password' : requireOtp ? 'Verify OTP' : 'Secure Login'}
           </button>
         </form>
       </div>

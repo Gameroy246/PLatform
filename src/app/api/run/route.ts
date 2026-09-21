@@ -5,12 +5,37 @@ import path from "path";
 import os from "os";
 import { mapDuckDBError } from "../../../lib/errorMapper";
 import { getDb, resetDb, runExec } from "../../../lib/duckdb";
+import { generateNodeSQL } from "../../../lib/sqlGenerator";
 
 // Persistent Database Directory
 const WORKSPACE_DIR = path.join(os.homedir(), ".architect");
 
+const rateLimitMap = new Map<string, { count: number, resetTime: number }>();
+
+function checkRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const limitData = rateLimitMap.get(ip);
+  if (!limitData) {
+    rateLimitMap.set(ip, { count: 1, resetTime: now + 10000 }); // 10 sec window
+    return true;
+  }
+  if (now > limitData.resetTime) {
+    rateLimitMap.set(ip, { count: 1, resetTime: now + 10000 });
+    return true;
+  }
+  if (limitData.count > 5) {
+    return false; // Throttled max 5 runs per 10s
+  }
+  limitData.count++;
+  return true;
+}
+
 export async function POST(req: Request) {
   try {
+    const ip = req.headers.get('x-forwarded-for') || 'unknown';
+    if (!checkRateLimit(ip)) {
+      return NextResponse.json({ error: 'Too many pipeline executions. Please wait.' }, { status: 429 });
+    }
     const { getSession } = await import('@/lib/auth');
     const session = await getSession();
     if (session?.role === 'VIEWER') {
@@ -28,7 +53,7 @@ export async function POST(req: Request) {
     await runExec(conn, `SET File_Search_Path='${WORKSPACE_DIR.replace(/\\/g, '/')}'`);
 
     // Load spatial extension only if pipeline uses Excel input (st_read)
-    const needsSpatial = nodes.some((n: any) => n.sql?.includes('st_read'));
+    const needsSpatial = nodes.some((n: any) => generateNodeSQL(n, edges)?.includes('st_read'));
     if (needsSpatial) {
       try {
         await runExec(conn, "INSTALL spatial; LOAD spatial;");
@@ -38,10 +63,10 @@ export async function POST(req: Request) {
     // Ecosystem Extensions
     const extensionsToLoad = new Set<string>();
     nodes.forEach((n: any) => {
-      if (n.sql?.includes('mysql_scan')) extensionsToLoad.add('mysql');
-      if (n.sql?.includes('postgres_scan')) extensionsToLoad.add('postgres');
-      if (n.sql?.includes('sqlite_scan')) extensionsToLoad.add('sqlite');
-      if (n.sql?.includes('read_json_auto(') && n.sql?.includes('http')) extensionsToLoad.add('httpfs');
+      if (generateNodeSQL(n, edges)?.includes('mysql_scan')) extensionsToLoad.add('mysql');
+      if (generateNodeSQL(n, edges)?.includes('postgres_scan')) extensionsToLoad.add('postgres');
+      if (generateNodeSQL(n, edges)?.includes('sqlite_scan')) extensionsToLoad.add('sqlite');
+      if (generateNodeSQL(n, edges)?.includes('read_json_auto(') && generateNodeSQL(n, edges)?.includes('http')) extensionsToLoad.add('httpfs');
     });
 
     for (const ext of extensionsToLoad) {
@@ -63,7 +88,7 @@ export async function POST(req: Request) {
     nodes.forEach((n: any) => {
       inDegree[n.id] = 0;
       adjList[n.id] = [];
-      nodeMap[n.id] = n.sql;
+      nodeMap[n.id] = generateNodeSQL(n, edges);
     });
 
     edges?.forEach((e: any) => {
@@ -192,7 +217,7 @@ export async function POST(req: Request) {
        node_statuses[id] = { status: 'COMPLETED', duration_ms: (metric as any).duration_ms };
     }
 
-    const finalSql = nodes.find((n: any) => n.id === finalNodeId)?.sql || '';
+    const finalSql = nodes.find((n: any) => n.id === finalNodeId) ? generateNodeSQL(nodes.find((n: any) => n.id === finalNodeId), edges) : '';
 
     return NextResponse.json({
       success: true,

@@ -10,6 +10,7 @@ export const db = new Database(dbPath, { timeout: 8000 });
 db.pragma('journal_mode = WAL');
 
 try {
+  try { db.exec('ALTER TABLE users ADD COLUMN force_password_change INTEGER DEFAULT 0'); } catch(e) {}
   // Create tables
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
@@ -22,6 +23,7 @@ try {
       reset_token TEXT,
       reset_expires INTEGER,
       features TEXT DEFAULT '[]', -- JSON array of accessible features
+      force_password_change INTEGER DEFAULT 0
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
