@@ -496,8 +496,8 @@ export default function Canvas({ projectId, onBack, onOpenAdmin, onLogout }: { p
     }
     try {
       showToast("Fetching input preview...", "success");
-      const mappedNodes = nodes.map(n => ({ id: n.id, sql: generateNodeSQL(n, edges) }));
-      const payload = { nodes: mappedNodes, edges, targetNodeId: parentEdges[0].source };
+      
+      const payload = { nodes, edges, targetNodeId: parentEdges[0].source };
       const res = await axios.post('/api/preview', payload);
       setInputPreviewData(res.data.preview.sample_data);
     } catch (e: any) {
@@ -512,10 +512,10 @@ export default function Canvas({ projectId, onBack, onOpenAdmin, onLogout }: { p
     
     const timeout = setTimeout(async () => {
       try {
-        const mappedNodes = nodes.map(n => ({ id: n.id, sql: generateNodeSQL(n, edges) }));
+        
         
         // Fetch output preview
-        const payload = { nodes: mappedNodes, edges, targetNodeId: selectedNode.id };
+        const payload = { nodes, edges, targetNodeId: selectedNode.id };
         const res = await axios.post('/api/preview', payload, { signal: abortController.signal });
         if (res.data?.preview?.sample_data) {
            setPreviewData(res.data.preview.sample_data);
@@ -526,7 +526,7 @@ export default function Canvas({ projectId, onBack, onOpenAdmin, onLogout }: { p
         if (abortController.signal.aborted) return;
         const parentEdges = edges.filter(e => e.target === selectedNode.id);
         if (parentEdges.length > 0) {
-           const inPayload = { nodes: mappedNodes, edges, targetNodeId: parentEdges[0].source };
+           const inPayload = { nodes, edges, targetNodeId: parentEdges[0].source };
            const inRes = await axios.post('/api/preview', inPayload, { signal: abortController.signal });
            if (inRes.data?.preview?.sample_data) {
               setInputPreviewData(inRes.data.preview.sample_data);
@@ -686,17 +686,7 @@ export default function Canvas({ projectId, onBack, onOpenAdmin, onLogout }: { p
 
     try {
       showToast("Executing pipeline...", "success");
-      const mappedNodes = nodes.map(node => {
-        const generatedSql = generateNodeSQL(node, edges);
-        return { id: node.id, sql: generatedSql };
-      });
-
-      const mappedEdges = edges.map(edge => ({
-        source: edge.source,
-        target: edge.target
-      }));
-
-      const payload = { nodes: mappedNodes, edges: mappedEdges, output_format: outputFormat };
+      const payload = { nodes: nodes, edges: edges, output_format: outputFormat };
       const response = await axios.post('/api/run', payload);
       
       const { data } = response;
@@ -716,7 +706,7 @@ export default function Canvas({ projectId, onBack, onOpenAdmin, onLogout }: { p
       }
 
       try {
-        await axios.post('/api/pipelines', { id: 'default-pipeline', name: 'My Main Pipeline', nodes: mappedNodes, edges: mappedEdges });
+        await axios.post('/api/pipelines', { id: 'default-pipeline', name: 'My Main Pipeline', nodes, edges });
       } catch(e) {
         console.error("Auto-save failed", e);
       }
@@ -1375,8 +1365,8 @@ export default function Canvas({ projectId, onBack, onOpenAdmin, onLogout }: { p
                           onClick={async () => {
                             try {
                               showToast("Fetching preview for selected node...", "success");
-                              const mappedNodes = nodes.map(n => ({ id: n.id, sql: generateNodeSQL(n, edges) }));
-                              const payload = { nodes: mappedNodes, edges, targetNodeId: selectedNode.id };
+                              
+                              const payload = { nodes, edges, targetNodeId: selectedNode.id };
                               const res = await axios.post('/api/preview', payload);
                               setPreviewData(res.data.preview.sample_data || []);
                             } catch (e: any) {
