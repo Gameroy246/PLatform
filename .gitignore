@@ -30,7 +30,7 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# env files
 .env*
 
 # vercel
@@ -39,3 +39,25 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# runtime databases
+system.db
+system.db-shm
+system.db-wal
+*.duckdb
+*.duckdb.wal
+
+# secrets
+.jwt_secret
+
+# logs
+audit.log
+
+# scratch / patch scripts
+*.patch.js
+
+# test data
+*.test.csv
+
+# temp dirs
+.tmp/
