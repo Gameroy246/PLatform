@@ -156,7 +156,7 @@ export default function ProjectDashboard({ user, onOpenProject, onOpenAdmin, onL
           </div>
         )}
         
-        {user?.role === 'SUPERUSER' && (
+        {(user?.role === 'SUPERUSER' || user?.role === 'ADMIN') && (
            <button onClick={onOpenAdmin} className="px-3 py-1.5 rounded-md text-xs font-semibold bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500/20 transition-colors flex items-center gap-1.5">
              <ShieldAlert className="w-4 h-4" /> Admin
            </button>
@@ -245,7 +245,7 @@ export default function ProjectDashboard({ user, onOpenProject, onOpenAdmin, onL
                     >
                       <Copy className="w-4 h-4" />
                     </button>
-                    {(p.owner_id === user?.id || user?.role === 'SUPERUSER') && (
+                    {(p.owner_id === user?.id || user?.role === 'SUPERUSER' || user?.role === 'ADMIN') && (
                       <button 
                         onClick={(e) => { e.stopPropagation(); openShareModal(p); }}
                         className="p-1.5 text-text-muted hover:text-blue-500 hover:bg-blue-500/10 rounded transition-colors"
@@ -254,7 +254,7 @@ export default function ProjectDashboard({ user, onOpenProject, onOpenAdmin, onL
                         <Share2 className="w-4 h-4" />
                       </button>
                     )}
-                    {p.owner_id === user?.id && (
+                    {(p.owner_id === user?.id || user?.role === 'SUPERUSER' || user?.role === 'ADMIN') && (
                       <button 
                         onClick={(e) => { e.stopPropagation(); deleteProject(p.id); }}
                         className="p-1.5 text-text-muted hover:text-red-500 hover:bg-red-500/10 rounded transition-colors"

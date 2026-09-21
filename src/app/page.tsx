@@ -75,7 +75,6 @@ export default function SecureWorkspace() {
           <Canvas 
             projectId={activeProjectId} 
             onBack={() => setActiveView('dashboard')} 
-            onOpenAdmin={() => setActiveView('admin')}
             onLogout={() => {
               setAuthStatus('unauthenticated');
               setActiveView('login');
