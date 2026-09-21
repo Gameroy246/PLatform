@@ -23,7 +23,7 @@ try {
       reset_token TEXT,
       reset_expires INTEGER,
       features TEXT DEFAULT '[]', -- JSON array of accessible features
-      force_password_change INTEGER DEFAULT 0
+      force_password_change INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -50,7 +50,7 @@ try {
   // Create default superuser
   const defaultPassword = bcrypt.hashSync('admin123', 10);
   const stmt = db.prepare(`
-    INSERT INTO users (id, email, password_hash, role, features)
+    INSERT OR IGNORE INTO users (id, email, password_hash, role, features)
     VALUES (?, ?, ?, ?, ?)
   `);
   stmt.run('user_superuser', 'admin@architect.local', defaultPassword, 'SUPERUSER', '["all"]');

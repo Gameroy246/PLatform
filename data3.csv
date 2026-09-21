@@ -1,0 +1,4 @@
+id,name,age
+5,Eve,40
+"malformed_row,missing_quotes
+6,Frank,22
