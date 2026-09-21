@@ -1,6 +1,6 @@
 # Local Data Architect
 
-A secure, cloud-synced visual data engineering platform. Build, profile, and compile complex SQL pipelines in your browser using DuckDB — with multi-user authentication, role-based access control, and enterprise-grade security hardening.
+A secure, cloud-synced, local first visual data engineering platform. Build, profile, and compile complex SQL pipelines in your browser using DuckDB — with multi-user authentication, role-based access control, and enterprise-grade security hardening.
 
 ---
 
