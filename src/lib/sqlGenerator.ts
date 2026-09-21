@@ -1,4 +1,5 @@
 export function generateNodeSQL(node: any, edges: any[], variables: Record<string, string> = {}): string {
+  if (!node || !node.data) return "SELECT 'Invalid Node' AS status";
   let generatedSql = node.data.sql as string || "";
   const op = node.data.operation;
   const parentEdges = edges.filter(e => e.target === node.id);
