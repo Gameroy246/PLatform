@@ -13,6 +13,7 @@ import DataSourceNode from './DataSourceNode';
 import TransformNode from './TransformNode';
 import StickyNoteNode from './StickyNoteNode';
 import PropertiesPanel from './PropertiesPanel';
+import AIPipelineBuilderModal from './AIPipelineBuilderModal';
 import CommandPalette from './CommandPalette';
 import Dashboard from './Dashboard';
 import { useEffect } from 'react';
@@ -150,6 +151,7 @@ export default function Canvas({ projectId, onBack, onOpenAdmin, onLogout }: { p
   const [showWelcomeGuide, setShowWelcomeGuide] = useState(true);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
+  const [isAIModalOpen, setIsAIModalOpen] = useState(false);
 
   // Init from Local Storage
   useEffect(() => {
@@ -804,6 +806,9 @@ export default function Canvas({ projectId, onBack, onOpenAdmin, onLogout }: { p
           </h1>
         </div>
         <div className="flex items-center gap-4">
+          <button onClick={() => setIsAIModalOpen(true)} className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold border border-border rounded-md bg-gradient-to-r from-accent to-purple-600 text-white shadow-glow hover:opacity-90 transition-colors">
+            <Sparkles className="w-4 h-4" /> AI Builder
+          </button>
           <input 
             type="file" 
             ref={pipelineFileInputRef} 
@@ -1083,7 +1088,17 @@ export default function Canvas({ projectId, onBack, onOpenAdmin, onLogout }: { p
           <SettingsModal onClose={() => setIsSettingsModalOpen(false)} />
         )}
 
-        {/* Main Canvas Area */}
+        {isAIModalOpen && (
+        <AIPipelineBuilderModal 
+          onClose={() => setIsAIModalOpen(false)}
+          onGenerate={(pipeline) => {
+            setNodes(pipeline.nodes);
+            setEdges(pipeline.edges);
+          }}
+        />
+      )}
+
+      {/* Main Canvas Area */}
         <main className="flex-1 relative">
           <ReactFlow
             nodes={nodes}
